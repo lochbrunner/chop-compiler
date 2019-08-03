@@ -1,0 +1,33 @@
+{
+    "name": "chop-lang-support",
+    "displayName": "chop-lang",
+    "description": "chop language support",
+    "version": "0.0.1",
+    "engines": {
+        "vscode": "^1.35.0"
+    },
+    "categories": [
+        "Programming Languages"
+    ],
+    "contributes": {
+        "languages": [
+            {
+                "id": "chop",
+                "aliases": [
+                    "chop"
+                ],
+                "extensions": [
+                    ".ch"
+                ],
+                "configuration": "./language-configuration.json"
+            }
+        ],
+        "grammars": [
+            {
+                "language": "chop",
+                "scopeName": "source.chop",
+                "path": "./syntaxes/chop.tmLanguage.json"
+            }
+        ]
+    }
+}

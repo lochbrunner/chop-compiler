@@ -1,0 +1,94 @@
+{
+	"$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+	"name": "chop",
+	"fileTypes": [
+		"chop"
+	],
+	"patterns": [
+		{
+			"include": "#keywords"
+		},
+		{
+			"include": "#strings"
+		}
+	],
+	"repository": {
+		"keywords": {
+			"patterns": [
+				{
+					"name": "keyword.control.chop",
+					"match": "\\b(import)\\b"
+				},
+				{
+					"name": "keyword.other",
+					"match": "type"
+				},
+				{
+					"name": "keyword.operator",
+					"match": "\\b(:=|=>)\\b"
+				},
+				{
+					"name": "comment.line",
+					"match": "\\b(//)\\b"
+				},
+				{
+					"name": "keyword.other.unit",
+					"match": "\\b(i8|i16|i32|i64|u8|u16|u32|u64|bool|char)\\b"
+				}
+			]
+		},
+		"strings": {
+			"name": "string.quoted.double.chop",
+			"begin": "\"",
+			"end": "\"",
+			"patterns": [
+				{
+					"name": "constant.character.escape.chop",
+					"match": "\\\\."
+				}
+			]
+		},
+		"array-literal": {
+			"begin": "\\[",
+			"beginCaptures": {
+				"0": {
+					"name": "meta.brace.square.chop"
+				}
+			},
+			"end": "\\]",
+			"endCaptures": {
+				"0": {
+					"name": "meta.brace.square.chop"
+				}
+			},
+			"name": "meta.array.literal.chop",
+			"patterns": [
+				{
+					"include": "#expression"
+				}
+			]
+		},
+		"assignment-operator": {
+			"match": ":=",
+			"name": "keyword.operator.assignment.chop"
+		},
+		"comment-block": {
+			"begin": "/\\*",
+			"end": "\\*/",
+			"name": "comment.block.chop"
+		},
+		"comment-line": {
+			"match": "(//).*$\\n?",
+			"name": "comment.line.chop"
+		},
+		"comparison-operator": {
+			"match": "==|!=|>|<",
+			"name": "keyword.operator.comparison.chop"
+		},
+		"boolean-literal": {
+			"match": "(\\s*)(false|true)\\b",
+			"name": "constant.language.boolean.chop"
+		}
+	},
+	"scopeName": "source.chop"
+}
