@@ -1,0 +1,37 @@
+#[derive(Debug, PartialEq)]
+pub struct Location {
+    pub line: u32,
+    pub offset: usize,
+}
+
+#[derive(Debug, PartialEq)]
+pub enum TokenPayload {
+    Comment,
+    Ident(String),
+    // Literals
+    Int32(i32),
+    // TODO: more literals
+
+    // Statements
+    DefineLocal, // :=
+    // DefinePublic, // :+
+    // Declare,      // :
+    // Operators
+    Pipe, // |
+          // Modifiers
+          // Mutable, // mut,
+
+          // Delimiters
+          // Dot,
+          // ParenthesesL,
+          // ParenthesesR,
+          // BraceL,
+          // BraceR,
+}
+
+#[derive(Debug, PartialEq)]
+pub struct Token {
+    pub token: TokenPayload,
+    pub begin: Location,
+    pub end: Location,
+}
