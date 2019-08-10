@@ -1,0 +1,16 @@
+language: rust
+matrix:
+  include:
+    # Stable channel.
+    - os: linux
+      rust: stable
+      env: TARGET=x86_64-unknown-linux-gnu
+
+script:
+  - cargo build --verbose --all
+  - cargo test --verbose --all
+cache:
+  directories:
+    - /home/travis/.cargo
+before_cache:
+  - rm -rf /home/travis/.cargo/registry
