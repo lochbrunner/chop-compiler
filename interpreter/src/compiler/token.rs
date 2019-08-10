@@ -6,10 +6,11 @@ pub struct Location {
 
 #[derive(Debug, PartialEq)]
 pub enum TokenPayload {
-    Comment,
+    // Comment,
     Ident(String),
     // Literals
     Int32(i32),
+    Float32(f32),
     // TODO: more literals
 
     // Statements

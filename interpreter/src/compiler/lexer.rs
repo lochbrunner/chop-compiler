@@ -3,8 +3,9 @@ use crate::compiler::token::{Location, TokenPayload};
 use nom::{
   branch::alt,
   bytes::complete::{tag, take_until, take_while},
-  combinator::complete,
-  error::ParseError,
+  character::complete::{alpha1 as alpha, alphanumeric1},
+  combinator::{complete, opt},
+  error::{ErrorKind, ParseError},
   multi::{many0, many1},
   sequence::{preceded, terminated},
   IResult,
@@ -58,12 +59,57 @@ fn operators(code: Span) -> IResult<Span, Token> {
   alt((pipe, define_local))(code)
 }
 
-fn shebang(code: Span) -> IResult<Span, Token> {
+fn shebang(code: Span) -> IResult<Span, ()> {
   let (code, begin) = position(code)?;
   let (code, _) = tag("#!")(code)?;
   let (code, _) = take_until("\n")(code)?;
   let (code, end) = position(code)?;
-  Ok((code, Token::new(begin, end, TokenPayload::Comment)))
+  Ok((code, ()))
+}
+
+// Literals
+fn parse_integer(code: Span) -> IResult<Span, Token> {
+  let chars = "1234567890";
+  let (code, begin) = position(code)?;
+  // Sign ?
+  let (code, sign) = opt(tag("-"))(code)?;
+  let sign = match sign {
+    Some(_) => true,
+    None => false,
+  };
+  let (code, slice) = take_while(move |c| chars.contains(c))(code)?;
+  let (code, end) = position(code)?;
+  match slice.fragment.parse::<i32>() {
+    Ok(value) => Ok((
+      code,
+      Token::new(
+        begin,
+        end,
+        TokenPayload::Int32(if sign { -value } else { value }),
+      ),
+    )),
+    Err(_) => Err(nom::Err::Error((code, ErrorKind::Tag))),
+  }
+}
+
+fn parse_ident(code: Span) -> IResult<Span, Token> {
+  let chars = "_";
+  let (code, begin) = position(code)?;
+  let (code, ident) =
+    take_while(move |c: char| c.is_ascii_alphabetic() || chars.contains(c))(code)?;
+  let (code, end) = position(code)?;
+  if ident.fragment.len() == 0 {
+    Err(nom::Err::Error((code, ErrorKind::Tag)))
+  } else {
+    Ok((
+      code,
+      Token::new(begin, end, TokenPayload::Ident(ident.fragment.to_owned())),
+    ))
+  }
+}
+
+fn lex_all(code: Span) -> IResult<Span, Token> {
+  alt((operators, parse_integer, parse_ident))(code)
 }
 
 #[derive(Debug, PartialEq)]
@@ -74,7 +120,7 @@ pub struct LexerError {
 
 pub fn lex(code: &str) -> Result<Vec<Token>, LexerError> {
   let (code, _) = many0(shebang)(Span::new(code)).unwrap();
-  let a = complete(many1(preceded(sp, terminated(operators, sp))))(code);
+  let a = complete(many1(preceded(sp, terminated(lex_all, sp))))(code);
 
   match a {
     Ok((remaining, tokens)) => {
@@ -89,7 +135,6 @@ pub fn lex(code: &str) -> Result<Vec<Token>, LexerError> {
           },
         })
       }
-      // println!("{:?}", remaining.fragment);
     }
     Err(error) => match error {
       nom::Err::Incomplete(_) => Err(LexerError {
@@ -187,9 +232,45 @@ mod specs {
       &"#!/usr/bin/env ichop
 
       42 | stdout",
-    );
+    )
+    .unwrap();
 
-    p!(actual);
+    let expected = vec![
+      Token {
+        token: TokenPayload::Int32(42),
+        begin: Location {
+          line: 3,
+          offset: 28,
+        },
+        end: Location {
+          line: 3,
+          offset: 30,
+        },
+      },
+      Token {
+        token: TokenPayload::Pipe,
+        begin: Location {
+          line: 3,
+          offset: 31,
+        },
+        end: Location {
+          line: 3,
+          offset: 32,
+        },
+      },
+      Token {
+        token: TokenPayload::Ident("stdout".to_owned()),
+        begin: Location {
+          line: 3,
+          offset: 33,
+        },
+        end: Location {
+          line: 3,
+          offset: 39,
+        },
+      },
+    ];
+    assert_eq!(actual, expected);
   }
 
 }
