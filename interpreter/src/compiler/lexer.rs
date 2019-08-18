@@ -1,9 +1,9 @@
 use super::token::Token;
 use crate::compiler::token::{Location, TokenPayload};
+use crate::compiler::CompilerError;
 use nom::{
   branch::alt,
   bytes::complete::{tag, take_until, take_while},
-  character::complete::{alpha1 as alpha, alphanumeric1},
   combinator::{complete, opt},
   error::{ErrorKind, ParseError},
   multi::{many0, many1},
@@ -60,10 +60,8 @@ fn operators(code: Span) -> IResult<Span, Token> {
 }
 
 fn shebang(code: Span) -> IResult<Span, ()> {
-  let (code, begin) = position(code)?;
   let (code, _) = tag("#!")(code)?;
   let (code, _) = take_until("\n")(code)?;
-  let (code, end) = position(code)?;
   Ok((code, ()))
 }
 
@@ -73,10 +71,7 @@ fn parse_integer(code: Span) -> IResult<Span, Token> {
   let (code, begin) = position(code)?;
   // Sign ?
   let (code, sign) = opt(tag("-"))(code)?;
-  let sign = match sign {
-    Some(_) => true,
-    None => false,
-  };
+  let sign = sign.is_some();
   let (code, slice) = take_while(move |c| chars.contains(c))(code)?;
   let (code, end) = position(code)?;
   match slice.fragment.parse::<i32>() {
@@ -98,7 +93,7 @@ fn parse_ident(code: Span) -> IResult<Span, Token> {
   let (code, ident) =
     take_while(move |c: char| c.is_ascii_alphabetic() || chars.contains(c))(code)?;
   let (code, end) = position(code)?;
-  if ident.fragment.len() == 0 {
+  if ident.fragment.is_empty() {
     Err(nom::Err::Error((code, ErrorKind::Tag)))
   } else {
     Ok((
@@ -112,22 +107,16 @@ fn lex_all(code: Span) -> IResult<Span, Token> {
   alt((operators, parse_integer, parse_ident))(code)
 }
 
-#[derive(Debug, PartialEq)]
-pub struct LexerError {
-  location: Location,
-  msg: String,
-}
-
-pub fn lex(code: &str) -> Result<Vec<Token>, LexerError> {
+pub fn lex(code: &str) -> Result<Vec<Token>, CompilerError> {
   let (code, _) = many0(shebang)(Span::new(code)).unwrap();
   let a = complete(many1(preceded(sp, terminated(lex_all, sp))))(code);
 
   match a {
     Ok((remaining, tokens)) => {
-      if remaining.fragment.len() == 0 {
+      if remaining.fragment.is_empty() {
         Ok(tokens)
       } else {
-        Err(LexerError {
+        Err(CompilerError {
           msg: format!("Incomplete Error: {:?}", remaining.fragment),
           location: Location {
             line: remaining.line,
@@ -137,18 +126,18 @@ pub fn lex(code: &str) -> Result<Vec<Token>, LexerError> {
       }
     }
     Err(error) => match error {
-      nom::Err::Incomplete(_) => Err(LexerError {
-        msg: format!("Incomplete"),
+      nom::Err::Incomplete(_) => Err(CompilerError {
+        msg: "Incomplete".to_string(),
         location: Location { line: 0, offset: 0 },
       }),
-      nom::Err::Error(error) => Err(LexerError {
+      nom::Err::Error(error) => Err(CompilerError {
         msg: format!("{:?} Error: {:?}", error.1, error.0.fragment),
         location: Location {
           line: error.0.line,
           offset: error.0.offset,
         },
       }),
-      nom::Err::Failure(error) => Err(LexerError {
+      nom::Err::Failure(error) => Err(CompilerError {
         msg: format!("{:?} Failure: {:?}", error.1, error.0.fragment),
         location: Location {
           line: error.0.line,
@@ -205,7 +194,7 @@ mod specs {
   #[test]
   fn error_unknown_op() {
     let actual = lex(&"~");
-    let expected = Err(LexerError {
+    let expected = Err(CompilerError {
       location: Location { line: 1, offset: 0 },
       msg: "Tag Error: \"~\"".to_owned(),
     });
@@ -217,7 +206,7 @@ mod specs {
   #[test]
   fn error_incomplete_parse() {
     let actual = lex(&"| := ~ |");
-    let expected = Err(LexerError {
+    let expected = Err(CompilerError {
       location: Location { line: 1, offset: 5 },
       msg: "Incomplete Error: \"~ |\"".to_owned(),
     });

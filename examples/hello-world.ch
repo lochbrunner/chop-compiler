@@ -1,4 +1,4 @@
-import iostream
+import * from iostream
 
 "Hello World!" | stdout
 
@@ -25,5 +25,3 @@ stdin.once | split | i32.parse | + | stdout
 
 // a+b*c*d
 stdin.once | split | i32.parse | + | * | stdout
-
-true false
