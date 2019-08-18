@@ -19,17 +19,10 @@ pub fn evaluate(code: &[ByteCode], writer: &mut dyn Write) -> Result<(), String>
                             return Err(format!("Error writing to stdout: {}", error));
                         }
                     }
-                    _ => {
-                        return Err(format!(
-                            "Function stdout expects int32 as argument but got {:?}",
-                            stack_item
-                        ))
-                    }
                 },
                 None => return Err("Function stdout expects one argument.".to_string()),
             },
             ByteCode::PushInt32(v) => stack.push(StackItem::Int32(*v)),
-            _ => return Err(format!("Unknown Instruction: {:?}", instruction)),
         }
     }
     Ok(())
