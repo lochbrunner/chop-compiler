@@ -6,13 +6,13 @@ use crate::evaluation::bytecode::ByteCode;
 pub fn export(ast: Ast) -> Result<Vec<ByteCode>, CompilerError> {
     let mut bytecode = vec![];
     for mut statement in ast.statements.into_iter() {
-        match statement.root.root.token {
+        match statement.root.token {
             TokenPayload::Ident(ident) => match ident.as_ref() {
-                "stdout" => match statement.root.args.pop() {
+                "stdout" => match statement.args.pop() {
                     Some(arg) => {
-                        if !statement.root.args.is_empty() {
+                        if !statement.args.is_empty() {
                             return Err(CompilerError {
-                                location: statement.root.root.begin.clone(),
+                                location: statement.root.begin.clone(),
                                 msg: format!(
                                     "Exporter Error: Function {} has tow many arguments",
                                     ident
@@ -25,7 +25,7 @@ pub fn export(ast: Ast) -> Result<Vec<ByteCode>, CompilerError> {
                             }
                             _ => {
                                 return Err(CompilerError {
-                                    location: statement.root.root.begin.clone(),
+                                    location: statement.root.begin.clone(),
                                     msg: format!(
                                         "Exporter Error: Function {} expects an int as argument but got {:?}",
                                         ident, arg.root.token
@@ -37,24 +37,24 @@ pub fn export(ast: Ast) -> Result<Vec<ByteCode>, CompilerError> {
                     }
                     None => {
                         return Err(CompilerError {
-                            location: statement.root.root.begin.clone(),
+                            location: statement.root.begin.clone(),
                             msg: format!("Exporter Error: Function {} has no argument", ident),
                         })
                     }
                 },
                 _ => {
                     return Err(CompilerError {
-                        location: statement.root.root.begin.clone(),
+                        location: statement.root.begin.clone(),
                         msg: format!("Exporter Error: Unknown ident: {}", ident),
                     })
                 }
             },
             _ => {
                 return Err(CompilerError {
-                    location: statement.root.root.begin.clone(),
+                    location: statement.root.begin.clone(),
                     msg: format!(
                         "Exporter Error: Unknown token {:?}",
-                        statement.root.root.token
+                        statement.root.token
                     ),
                 })
             }
@@ -66,14 +66,13 @@ pub fn export(ast: Ast) -> Result<Vec<ByteCode>, CompilerError> {
 #[cfg(test)]
 mod specs {
     use super::*;
-    use crate::compiler::ast::{Node, Statement};
+    use crate::compiler::ast::{Node};
     use crate::compiler::token::{Location, Token, TokenPayload};
 
     #[test]
     fn milestone_1() {
         let input = Ast {
-            statements: vec![Statement {
-                root: Node {
+            statements: vec![Node {
                     root: Token {
                         token: TokenPayload::Ident("stdout".to_owned()),
                         begin: Location {
@@ -96,7 +95,6 @@ mod specs {
                             offset: 30,
                         },
                     })],
-                },
             }],
         };
         let actual = export(input);

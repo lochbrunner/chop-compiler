@@ -5,9 +5,9 @@ matrix:
     - os: linux
       rust: stable
       env: TARGET=x86_64-unknown-linux-gnu
-
+before_script:
+  - rustup component add clippy
 script:
-  - cargo install clippy
   - cargo build --verbose --all
   - cargo test --verbose --all
   - cargo clippy --verbose --all

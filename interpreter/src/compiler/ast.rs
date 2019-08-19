@@ -17,11 +17,6 @@ impl Node {
 }
 
 #[derive(Debug, PartialEq)]
-pub struct Statement {
-    pub root: Node,
-}
-
-#[derive(Debug, PartialEq)]
 pub struct Ast {
-    pub statements: Vec<Statement>,
+    pub statements: Vec<Node>,
 }

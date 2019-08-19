@@ -1,4 +1,4 @@
-use crate::compiler::ast::{Ast, Node, Statement};
+use crate::compiler::ast::{Ast, Node};
 use crate::compiler::token::TokenPayload;
 use crate::compiler::CompilerError;
 
@@ -7,19 +7,17 @@ pub fn generate(ast: Ast) -> Result<Ast, CompilerError> {
     let statements = ast
         .statements
         .into_iter()
-        .map(|statement| match statement.root.root.token {
-            TokenPayload::Pipe => Ok(Statement {
-                root: Node {
-                    root: statement.root.args[1].root.clone(),
-                    args: vec![statement.root.args[0].clone()],
-                },
+        .map(|statement| match statement.root.token {
+            TokenPayload::Pipe => Ok(Node {
+                root: statement.args[1].root.clone(),
+                args: vec![statement.args[0].clone()],
             }),
             TokenPayload::Ident(_) => Ok(statement), // Function Call
             _ => Err(CompilerError {
-                location: statement.root.root.begin.clone(),
+                location: statement.root.begin.clone(),
                 msg: format!(
                     "Generator Error: Token {:?} is not implemented yet!",
-                    statement.root.root.token
+                    statement.root.token
                 ),
             }),
         })
@@ -35,65 +33,20 @@ mod specs {
     #[test]
     fn milestone_1() {
         let input = Ast {
-            statements: vec![Statement {
-                root: Node {
-                    root: Token {
-                        token: TokenPayload::Pipe,
-                        begin: Location {
-                            line: 3,
-                            offset: 31,
-                        },
-                        end: Location {
-                            line: 3,
-                            offset: 32,
-                        },
+            statements: vec![Node {
+                root: Token {
+                    token: TokenPayload::Pipe,
+                    begin: Location {
+                        line: 3,
+                        offset: 31,
                     },
-                    args: vec![
-                        Node::new(Token {
-                            token: TokenPayload::Int32(42),
-                            begin: Location {
-                                line: 3,
-                                offset: 28,
-                            },
-                            end: Location {
-                                line: 3,
-                                offset: 30,
-                            },
-                        }),
-                        Node::new(Token {
-                            token: TokenPayload::Ident("stdout".to_owned()),
-                            begin: Location {
-                                line: 3,
-                                offset: 33,
-                            },
-                            end: Location {
-                                line: 3,
-                                offset: 39,
-                            },
-                        }),
-                    ],
+                    end: Location {
+                        line: 3,
+                        offset: 32,
+                    },
                 },
-            }],
-        };
-
-        let actual = generate(input);
-        assert!(actual.is_ok());
-        let actual = actual.unwrap();
-        let expected = Ast {
-            statements: vec![Statement {
-                root: Node {
-                    root: Token {
-                        token: TokenPayload::Ident("stdout".to_owned()),
-                        begin: Location {
-                            line: 3,
-                            offset: 33,
-                        },
-                        end: Location {
-                            line: 3,
-                            offset: 39,
-                        },
-                    },
-                    args: vec![Node::new(Token {
+                args: vec![
+                    Node::new(Token {
                         token: TokenPayload::Int32(42),
                         begin: Location {
                             line: 3,
@@ -103,8 +56,49 @@ mod specs {
                             line: 3,
                             offset: 30,
                         },
-                    })],
+                    }),
+                    Node::new(Token {
+                        token: TokenPayload::Ident("stdout".to_owned()),
+                        begin: Location {
+                            line: 3,
+                            offset: 33,
+                        },
+                        end: Location {
+                            line: 3,
+                            offset: 39,
+                        },
+                    }),
+                ],
+            }],
+        };
+
+        let actual = generate(input);
+        assert!(actual.is_ok());
+        let actual = actual.unwrap();
+        let expected = Ast {
+            statements: vec![Node {
+                root: Token {
+                    token: TokenPayload::Ident("stdout".to_owned()),
+                    begin: Location {
+                        line: 3,
+                        offset: 33,
+                    },
+                    end: Location {
+                        line: 3,
+                        offset: 39,
+                    },
                 },
+                args: vec![Node::new(Token {
+                    token: TokenPayload::Int32(42),
+                    begin: Location {
+                        line: 3,
+                        offset: 28,
+                    },
+                    end: Location {
+                        line: 3,
+                        offset: 30,
+                    },
+                })],
             }],
         };
         assert_eq!(actual, expected);

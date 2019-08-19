@@ -40,10 +40,10 @@ pub struct CompilerError {
 }
 
 impl CompilerError {
-    pub fn print(&self) {
+    pub fn print(&self, filename: &str) {
         println!(
-            "<unknown file>:{}:{}",
-            self.location.line, self.location.offset
+            "{}:{}:{}",
+            filename, self.location.line, self.location.offset
         );
         println!("{}", self.msg);
     }

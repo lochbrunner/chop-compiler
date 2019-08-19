@@ -85,8 +85,6 @@ pub fn parse(context: &Context, tokens: &[Token]) -> Result<ast::Ast, CompilerEr
 
     let mut expect_function_as_variable = false;
 
-    let mut statements: Vec<ast::Statement> = Vec::new();
-
     for token in tokens.iter() {
         match &token.token {
             TokenPayload::ParenthesesL => stack.infix.push(Infix {
@@ -128,6 +126,7 @@ pub fn parse(context: &Context, tokens: &[Token]) -> Result<ast::Ast, CompilerEr
         }
     }
 
+    let mut statements: Vec<ast::Node> = Vec::new();
     while let Some(op) = stack.infix.pop() {
         // How much args does the op need?
         if stack.symbol.len() < op.req_args_count {
@@ -141,12 +140,10 @@ pub fn parse(context: &Context, tokens: &[Token]) -> Result<ast::Ast, CompilerEr
             .map(|_| stack.pop_symbol_as_node().unwrap())
             .collect::<Vec<_>>();
         args.reverse();
-        statements.push(ast::Statement {
-            root: ast::Node {
+        statements.push(ast::Node {
                 root: op.token,
                 args,
-            },
-        })
+        });
     }
 
     statements.reverse();
@@ -207,15 +204,13 @@ mod specs {
         let actual = actual.unwrap();
 
         let expected = ast::Ast {
-            statements: vec![ast::Statement {
-                root: ast::Node {
+            statements: vec![ast::Node {
                     root: tokens[1].clone(),
                     args: vec![
                         ast::Node::new(tokens[0].clone()),
                         ast::Node::new(tokens[2].clone()),
                     ],
-                },
-            }],
+                }],
         };
 
         assert_eq!(actual, expected);
@@ -261,8 +256,7 @@ mod specs {
         let actual = actual.unwrap();
 
         let expected = ast::Ast {
-            statements: vec![ast::Statement {
-                root: ast::Node {
+            statements: vec![ast::Node {
                     root: Token {
                         token: TokenPayload::Ident("stdout".to_string()),
                         begin: Location { line: 1, offset: 0 },
@@ -276,8 +270,7 @@ mod specs {
                         },
                         args: vec![],
                     }],
-                },
-            }],
+                }],
         };
 
         assert_eq!(actual, expected);
@@ -309,8 +302,7 @@ mod specs {
         assert!(actual.is_ok());
         let actual = actual.unwrap();
         let expected = ast::Ast {
-            statements: vec![ast::Statement {
-                root: ast::Node {
+            statements: vec![ast::Node {
                     root: Token {
                         token: TokenPayload::Ident("stdout".to_string()),
                         begin: Location { line: 1, offset: 0 },
@@ -324,7 +316,6 @@ mod specs {
                         },
                         args: vec![],
                     }],
-                },
             }],
         };
 
