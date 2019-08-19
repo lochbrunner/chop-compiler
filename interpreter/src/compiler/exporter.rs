@@ -19,7 +19,7 @@ pub fn export(ast: Ast) -> Result<Vec<ByteCode>, CompilerError> {
                                 ),
                             });
                         }
-                        match arg.token {
+                        match arg.root.token {
                             TokenPayload::Int32(v) => {
                                 bytecode.push(ByteCode::PushInt32(v));
                             }
@@ -28,7 +28,7 @@ pub fn export(ast: Ast) -> Result<Vec<ByteCode>, CompilerError> {
                                     location: statement.root.root.begin.clone(),
                                     msg: format!(
                                         "Exporter Error: Function {} expects an int as argument but got {:?}",
-                                        ident, arg.token
+                                        ident, arg.root.token
                                     ),
                                 })
                             }
@@ -85,7 +85,7 @@ mod specs {
                             offset: 39,
                         },
                     },
-                    args: vec![Token {
+                    args: vec![Node::new(Token {
                         token: TokenPayload::Int32(42),
                         begin: Location {
                             line: 3,
@@ -95,7 +95,7 @@ mod specs {
                             line: 3,
                             offset: 30,
                         },
-                    }],
+                    })],
                 },
             }],
         };

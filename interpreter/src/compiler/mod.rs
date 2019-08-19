@@ -49,7 +49,7 @@ impl CompilerError {
     }
 }
 
-pub fn compile(code: &str) -> Result<Vec<ByteCode>, CompilerError> {
+pub fn compile(code: &str, filename: &str) -> Result<Vec<ByteCode>, CompilerError> {
     // Milestone 1 context
     let context = Context {
         declarations: hashmap! {
@@ -57,7 +57,7 @@ pub fn compile(code: &str) -> Result<Vec<ByteCode>, CompilerError> {
         },
     };
 
-    let tokens = lexer::lex(code)?;
+    let tokens = lexer::lex(code, filename)?;
     let raw_ast = parser::parse(&context, &tokens)?;
     let ast = generator::generate(raw_ast)?;
     exporter::export(ast)
@@ -66,17 +66,67 @@ pub fn compile(code: &str) -> Result<Vec<ByteCode>, CompilerError> {
 #[cfg(test)]
 mod specs {
     use super::*;
+
     #[test]
     fn milestone_1() {
         let actual = compile(
             &"#!/usr/bin/env ichop
 
             42 | stdout",
+            &"test.ch",
         );
         assert!(actual.is_ok());
         let actual = actual.unwrap();
 
         let expected = vec![ByteCode::PushInt32(42), ByteCode::StdOut];
+
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn multiple_statements() {
+        let actual = compile(
+            &"#!/usr/bin/env ichop
+
+            42 | stdout
+            35 | stdout",
+            &"test.ch",
+        );
+
+        assert!(actual.is_ok());
+        let actual = actual.unwrap();
+
+        let expected = vec![
+            ByteCode::PushInt32(42),
+            ByteCode::StdOut,
+            ByteCode::PushInt32(35),
+            ByteCode::StdOut,
+        ];
+
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn milestone_1_advanced() {
+        let actual = compile(
+            &"#!/usr/bin/env ichop
+        42 | stdout
+        stdout(35)
+        stdout 28",
+            &"test.ch",
+        );
+
+        assert!(actual.is_ok());
+        let actual = actual.unwrap();
+
+        let expected = vec![
+            ByteCode::PushInt32(42),
+            ByteCode::StdOut,
+            ByteCode::PushInt32(35),
+            ByteCode::StdOut,
+            ByteCode::PushInt32(28),
+            ByteCode::StdOut,
+        ];
 
         assert_eq!(actual, expected);
     }

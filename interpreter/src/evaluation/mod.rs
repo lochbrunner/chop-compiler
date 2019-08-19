@@ -40,4 +40,20 @@ mod specs {
         assert!(result.is_ok());
         assert_eq!(&stdout.get_ref()[0..2], b"42");
     }
+    #[test]
+    fn milestone_1_advanced() {
+        let bytecode = vec![
+            ByteCode::PushInt32(42),
+            ByteCode::StdOut,
+            ByteCode::PushInt32(35),
+            ByteCode::StdOut,
+            ByteCode::PushInt32(28),
+            ByteCode::StdOut,
+        ];
+
+        let mut stdout = Cursor::new(vec![]);
+        let result = evaluate(&bytecode, &mut stdout);
+        assert!(result.is_ok());
+        assert_eq!(&stdout.get_ref()[0..9], b"42\n35\n28\n");
+    }
 }

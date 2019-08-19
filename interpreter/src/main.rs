@@ -32,7 +32,7 @@ fn main() {
         .expect("Filename parameter given");
 
     let code = fs::read_to_string(filename).expect("Something went wrong reading the file");
-    match compiler::compile(&code) {
+    match compiler::compile(&code, filename) {
         Err(error) => error.print(),
         Ok(bytecode) => {
             if let Err(msg) = evaluation::evaluate(&bytecode, &mut io::stdout()) {

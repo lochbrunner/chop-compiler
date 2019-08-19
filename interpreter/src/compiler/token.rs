@@ -24,8 +24,8 @@ pub enum TokenPayload {
 
     // Delimiters
     // Dot,
-    // ParenthesesL,
-    // ParenthesesR,
+    ParenthesesL,
+    ParenthesesR,
     // BraceL,
     // BraceR,
 }
@@ -35,4 +35,5 @@ pub struct Token {
     pub token: TokenPayload,
     pub begin: Location,
     pub end: Location,
+    // pub filename: &str,
 }

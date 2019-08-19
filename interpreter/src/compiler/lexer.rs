@@ -4,17 +4,17 @@ use crate::compiler::CompilerError;
 use nom::{
   branch::alt,
   bytes::complete::{tag, take_until, take_while},
-  combinator::{complete, opt},
+  combinator::{complete, map, opt},
   error::{ErrorKind, ParseError},
   multi::{many0, many1},
   sequence::{preceded, terminated},
   IResult,
 };
-use nom_locate::{position, LocatedSpan, LocatedSpanEx};
+use nom_locate::{position, LocatedSpanEx};
 
 // See: https://github.com/fflorent/nom_locate/issues/20
 
-type Span<'a> = LocatedSpan<&'a str>;
+type Span<'a> = LocatedSpanEx<&'a str, &'a str>;
 
 fn sp<'a, E: ParseError<Span<'a>>>(i: Span<'a>) -> IResult<Span<'a>, Span<'a>, E> {
   let chars = " \t\r\n";
@@ -23,8 +23,8 @@ fn sp<'a, E: ParseError<Span<'a>>>(i: Span<'a>) -> IResult<Span<'a>, Span<'a>, E
 
 impl Token {
   pub fn new(
-    begin: LocatedSpanEx<&str, ()>,
-    end: LocatedSpanEx<&str, ()>,
+    begin: LocatedSpanEx<&str, &str>,
+    end: LocatedSpanEx<&str, &str>,
     payload: TokenPayload,
   ) -> Token {
     Token {
@@ -36,27 +36,17 @@ impl Token {
         offset: end.offset,
         line: end.line,
       },
+      // filename: begin.extra
       token: payload,
     }
   }
 }
 
-fn pipe(code: Span) -> IResult<Span, Token> {
-  let (code, begin) = position(code)?;
-  let (code, _) = tag("|")(code)?;
-  let (code, end) = position(code)?;
-  Ok((code, Token::new(begin, end, TokenPayload::Pipe)))
-}
-
-fn define_local(code: Span) -> IResult<Span, Token> {
-  let (code, begin) = position(code)?;
-  let (code, _) = tag(":=")(code)?;
-  let (code, end) = position(code)?;
-  Ok((code, Token::new(begin, end, TokenPayload::DefineLocal)))
-}
-
-fn operators(code: Span) -> IResult<Span, Token> {
-  alt((pipe, define_local))(code)
+fn operators(code: Span) -> IResult<Span, TokenPayload> {
+  alt((
+    map(tag("|"), |_| TokenPayload::Pipe),
+    map(tag(":="), |_| TokenPayload::DefineLocal),
+  ))(code)
 }
 
 fn shebang(code: Span) -> IResult<Span, ()> {
@@ -66,50 +56,46 @@ fn shebang(code: Span) -> IResult<Span, ()> {
 }
 
 // Literals
-fn parse_integer(code: Span) -> IResult<Span, Token> {
+fn parse_integer(code: Span) -> IResult<Span, TokenPayload> {
   let chars = "1234567890";
-  let (code, begin) = position(code)?;
   // Sign ?
   let (code, sign) = opt(tag("-"))(code)?;
   let sign = sign.is_some();
   let (code, slice) = take_while(move |c| chars.contains(c))(code)?;
-  let (code, end) = position(code)?;
   match slice.fragment.parse::<i32>() {
-    Ok(value) => Ok((
-      code,
-      Token::new(
-        begin,
-        end,
-        TokenPayload::Int32(if sign { -value } else { value }),
-      ),
-    )),
+    Ok(value) => Ok((code, TokenPayload::Int32(if sign { -value } else { value }))),
     Err(_) => Err(nom::Err::Error((code, ErrorKind::Tag))),
   }
 }
 
-fn parse_ident(code: Span) -> IResult<Span, Token> {
+fn parse_ident(code: Span) -> IResult<Span, TokenPayload> {
   let chars = "_";
-  let (code, begin) = position(code)?;
   let (code, ident) =
     take_while(move |c: char| c.is_ascii_alphabetic() || chars.contains(c))(code)?;
-  let (code, end) = position(code)?;
   if ident.fragment.is_empty() {
     Err(nom::Err::Error((code, ErrorKind::Tag)))
   } else {
-    Ok((
-      code,
-      Token::new(begin, end, TokenPayload::Ident(ident.fragment.to_owned())),
-    ))
+    Ok((code, TokenPayload::Ident(ident.fragment.to_owned())))
   }
 }
 
-fn lex_all(code: Span) -> IResult<Span, Token> {
-  alt((operators, parse_integer, parse_ident))(code)
+fn parse_punctuation(code: Span) -> IResult<Span, TokenPayload> {
+  alt((
+    map(tag("("), |_| TokenPayload::ParenthesesL),
+    map(tag(")"), |_| TokenPayload::ParenthesesR),
+  ))(code)
 }
 
-pub fn lex(code: &str) -> Result<Vec<Token>, CompilerError> {
-  let (code, _) = many0(shebang)(Span::new(code)).unwrap();
-  let a = complete(many1(preceded(sp, terminated(lex_all, sp))))(code);
+fn lex_token(code: Span) -> IResult<Span, Token> {
+  let (code, begin) = position(code)?;
+  let (code, payload) = alt((operators, parse_integer, parse_ident, parse_punctuation))(code)?;
+  let (code, end) = position(code)?;
+  Ok((code, Token::new(begin, end, payload)))
+}
+
+pub fn lex(code: &str, filename: &str) -> Result<Vec<Token>, CompilerError> {
+  let (code, _) = many0(shebang)(Span{fragment: code, extra: filename, offset: 0, line: 1}).unwrap();
+  let a = complete(many1(preceded(sp, terminated(lex_token, sp))))(code);
 
   match a {
     Ok((remaining, tokens)) => {
@@ -154,7 +140,7 @@ mod specs {
 
   #[test]
   fn single_op() {
-    let actual = lex(&":= ").unwrap();
+    let actual = lex(&":= ", &"test").unwrap();
     let expected = vec![Token {
       token: TokenPayload::DefineLocal,
       begin: Location { line: 1, offset: 0 },
@@ -166,7 +152,7 @@ mod specs {
 
   #[test]
   fn multiple_ops_and_ws() {
-    let actual = lex(&" := \t |\n :=").unwrap();
+    let actual = lex(&" := \t |\n :=", &"test").unwrap();
     let expected = vec![
       Token {
         token: TokenPayload::DefineLocal,
@@ -193,7 +179,7 @@ mod specs {
 
   #[test]
   fn error_unknown_op() {
-    let actual = lex(&"~");
+    let actual = lex(&"~", &"test");
     let expected = Err(CompilerError {
       location: Location { line: 1, offset: 0 },
       msg: "Tag Error: \"~\"".to_owned(),
@@ -205,7 +191,7 @@ mod specs {
 
   #[test]
   fn error_incomplete_parse() {
-    let actual = lex(&"| := ~ |");
+    let actual = lex(&"| := ~ |", &"test");
     let expected = Err(CompilerError {
       location: Location { line: 1, offset: 5 },
       msg: "Incomplete Error: \"~ |\"".to_owned(),
@@ -221,6 +207,7 @@ mod specs {
       &"#!/usr/bin/env ichop
 
       42 | stdout",
+      &"test"
     )
     .unwrap();
 
@@ -257,6 +244,62 @@ mod specs {
           line: 3,
           offset: 39,
         },
+      },
+    ];
+    assert_eq!(actual, expected);
+  }
+
+  #[test]
+  fn function_with_braces() {
+    let actual = lex("stdout(42)", &"test");
+    assert!(actual.is_ok());
+    let actual = actual.unwrap();
+
+    let expected = vec![
+      Token {
+        token: TokenPayload::Ident("stdout".to_string()),
+        begin: Location { line: 1, offset: 0 },
+        end: Location { line: 1, offset: 6 },
+      },
+      Token {
+        token: TokenPayload::ParenthesesL,
+        begin: Location { line: 1, offset: 6 },
+        end: Location { line: 1, offset: 7 },
+      },
+      Token {
+        token: TokenPayload::Int32(42),
+        begin: Location { line: 1, offset: 7 },
+        end: Location { line: 1, offset: 9 },
+      },
+      Token {
+        token: TokenPayload::ParenthesesR,
+        begin: Location { line: 1, offset: 9 },
+        end: Location {
+          line: 1,
+          offset: 10,
+        },
+      },
+    ];
+
+    assert_eq!(actual, expected);
+  }
+
+  #[test]
+  fn function_without_braces() {
+    let actual = lex("stdout 42", &"test");
+    assert!(actual.is_ok());
+    let actual = actual.unwrap();
+
+    let expected = vec![
+      Token {
+        token: TokenPayload::Ident("stdout".to_string()),
+        begin: Location { line: 1, offset: 0 },
+        end: Location { line: 1, offset: 6 },
+      },
+      Token {
+        token: TokenPayload::Int32(42),
+        begin: Location { line: 1, offset: 7 },
+        end: Location { line: 1, offset: 9 },
       },
     ];
     assert_eq!(actual, expected);

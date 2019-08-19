@@ -10,10 +10,11 @@ pub fn generate(ast: Ast) -> Result<Ast, CompilerError> {
         .map(|statement| match statement.root.root.token {
             TokenPayload::Pipe => Ok(Statement {
                 root: Node {
-                    root: statement.root.args[1].clone(),
+                    root: statement.root.args[1].root.clone(),
                     args: vec![statement.root.args[0].clone()],
                 },
             }),
+            TokenPayload::Ident(_) => Ok(statement), // Function Call
             _ => Err(CompilerError {
                 location: statement.root.root.begin.clone(),
                 msg: format!(
@@ -48,7 +49,7 @@ mod specs {
                         },
                     },
                     args: vec![
-                        Token {
+                        Node::new(Token {
                             token: TokenPayload::Int32(42),
                             begin: Location {
                                 line: 3,
@@ -58,8 +59,8 @@ mod specs {
                                 line: 3,
                                 offset: 30,
                             },
-                        },
-                        Token {
+                        }),
+                        Node::new(Token {
                             token: TokenPayload::Ident("stdout".to_owned()),
                             begin: Location {
                                 line: 3,
@@ -69,7 +70,7 @@ mod specs {
                                 line: 3,
                                 offset: 39,
                             },
-                        },
+                        }),
                     ],
                 },
             }],
@@ -92,7 +93,7 @@ mod specs {
                             offset: 39,
                         },
                     },
-                    args: vec![Token {
+                    args: vec![Node::new(Token {
                         token: TokenPayload::Int32(42),
                         begin: Location {
                             line: 3,
@@ -102,7 +103,7 @@ mod specs {
                             line: 3,
                             offset: 30,
                         },
-                    }],
+                    })],
                 },
             }],
         };
