@@ -1,6 +1,6 @@
-use crate::compiler::ast::{Ast, Node};
-use crate::compiler::token::TokenPayload;
-use crate::compiler::CompilerError;
+use crate::ast::{Ast, Node};
+use crate::token::TokenPayload;
+use crate::CompilerError;
 
 /// Fills out the macros and runs all the custom compiler stuff.
 pub fn generate(ast: Ast) -> Result<Ast, CompilerError> {
@@ -28,7 +28,7 @@ pub fn generate(ast: Ast) -> Result<Ast, CompilerError> {
 #[cfg(test)]
 mod specs {
     use super::*;
-    use crate::compiler::token::{Location, Token, TokenPayload};
+    use crate::token::{Location, Token, TokenPayload};
 
     #[test]
     fn milestone_1() {

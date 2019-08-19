@@ -1,4 +1,3 @@
-use crate::evaluation::bytecode::ByteCode;
 use std::collections::HashMap;
 pub mod ast;
 mod exporter;
@@ -6,6 +5,12 @@ mod generator;
 mod lexer;
 mod parser;
 pub mod token;
+pub use exporter::bytecode;
+
+use crate::exporter::bytecode::ByteCode;
+
+#[macro_use]
+extern crate maplit;
 
 pub enum Type {
     Int32,
@@ -41,11 +46,11 @@ pub struct CompilerError {
 
 impl CompilerError {
     pub fn print(&self, filename: &str) {
-        println!(
+        eprintln!(
             "{}:{}:{}",
             filename, self.location.line, self.location.offset
         );
-        println!("{}", self.msg);
+        eprintln!("{}", self.msg);
     }
 }
 

@@ -5,12 +5,25 @@ matrix:
     - os: linux
       rust: stable
       env: TARGET=x86_64-unknown-linux-gnu
-before_script:
-  - rustup component add clippy
-script:
-  - cargo build --verbose --all
-  - cargo test --verbose --all
-  - cargo clippy --verbose --all
+jobs:
+  include:
+    - stage: Build
+      script: 
+        - cargo build --verbose --all
+    - stage: Lint
+      before_script: 
+        - rustup component add clippy
+      script:
+        - cargo clippy --verbose --all
+    - stage: Tests
+      name: Unit Tests
+      script: 
+        - cargo test --verbose --all
+    - name: End to End Tests
+      before_script: 
+        - cargo install --path ichop --force
+      script:
+        - ./milestones/test.sh 
 cache:
   directories:
     - /home/travis/.cargo

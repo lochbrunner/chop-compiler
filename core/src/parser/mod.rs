@@ -1,7 +1,7 @@
-use crate::compiler::ast;
-use crate::compiler::token::{Token, TokenPayload};
-use crate::compiler::CompilerError;
-use crate::compiler::Context;
+use crate::ast;
+use crate::token::{Token, TokenPayload};
+use crate::CompilerError;
+use crate::Context;
 
 #[derive(PartialEq, PartialOrd, Debug, Clone)]
 pub enum Precedence {
@@ -154,7 +154,7 @@ pub fn parse(context: &Context, tokens: &[Token]) -> Result<ast::Ast, CompilerEr
 #[cfg(test)]
 mod specs {
     use super::*;
-    use crate::compiler::{token::Location, Declaration, Type};
+    use crate::{token::Location, Declaration, Type};
     #[test]
     fn milestone_1() {
         let tokens = vec![

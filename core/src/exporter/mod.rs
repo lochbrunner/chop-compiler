@@ -1,7 +1,9 @@
-use crate::compiler::ast::Ast;
-use crate::compiler::token::TokenPayload;
-use crate::compiler::CompilerError;
-use crate::evaluation::bytecode::ByteCode;
+use crate::ast::Ast;
+use crate::token::TokenPayload;
+use crate::CompilerError;
+pub mod bytecode;
+
+use bytecode::ByteCode;
 
 pub fn export(ast: Ast) -> Result<Vec<ByteCode>, CompilerError> {
     let mut bytecode = vec![];
@@ -66,8 +68,8 @@ pub fn export(ast: Ast) -> Result<Vec<ByteCode>, CompilerError> {
 #[cfg(test)]
 mod specs {
     use super::*;
-    use crate::compiler::ast::{Node};
-    use crate::compiler::token::{Location, Token, TokenPayload};
+    use crate::ast::{Node};
+    use crate::token::{Location, Token, TokenPayload};
 
     #[test]
     fn milestone_1() {

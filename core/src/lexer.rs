@@ -1,6 +1,5 @@
-use super::token::Token;
-use crate::compiler::token::{Location, TokenPayload};
-use crate::compiler::CompilerError;
+use crate::token::{Token,Location, TokenPayload};
+use crate::CompilerError;
 use nom::{
   branch::alt,
   bytes::complete::{tag, take_until, take_while},

@@ -1,5 +1,5 @@
 [package]
-name = "interpreter"
+name = "core"
 version = "0.1.0"
 authors = ["Matthias Lochbrunner <matthias_lochbrunner@web.de>"]
 edition = "2018"
@@ -7,10 +7,6 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-clap = "2.33.0"
 maplit = "^1.0.1"
 nom = "5.0.0"
 nom_locate = "0.4.0"
-
-[dev-dependencies]
-p-macro = "*"

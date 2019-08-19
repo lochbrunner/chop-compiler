@@ -1,6 +1,4 @@
-pub mod bytecode;
-
-use bytecode::ByteCode;
+use core::bytecode::ByteCode;
 use std::io::Write;
 
 #[derive(Debug)]
