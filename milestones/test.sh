@@ -8,7 +8,10 @@ MILESTONES_DIR=$(dirname $0)
 
 FAILED=0
 
-CASES=("1/main.ch" "1/advanced.ch")
+CASES=(
+    "1/main.ch" "1/advanced.ch"
+    "2/test.sh"
+)
 
 for CASE in "${CASES[@]}"; do
     $MILESTONES_DIR/$CASE > /dev/null

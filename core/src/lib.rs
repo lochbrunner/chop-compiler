@@ -5,7 +5,7 @@ mod generator;
 mod lexer;
 mod parser;
 pub mod token;
-pub use exporter::bytecode;
+pub use exporter::{bytecode, llvm};
 
 use crate::exporter::bytecode::ByteCode;
 
@@ -65,7 +65,7 @@ pub fn compile(code: &str, filename: &str) -> Result<Vec<ByteCode>, CompilerErro
     let tokens = lexer::lex(code, filename)?;
     let raw_ast = parser::parse(&context, &tokens)?;
     let ast = generator::generate(raw_ast)?;
-    exporter::export(ast)
+    exporter::bytecode::export(ast)
 }
 
 #[cfg(test)]

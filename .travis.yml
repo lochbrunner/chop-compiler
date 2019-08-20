@@ -22,6 +22,7 @@ jobs:
     - name: End to End Tests
       before_script: 
         - cargo install --path ichop --force
+        - cargo install --path cchop --force
       script:
         - ./milestones/test.sh 
 cache:

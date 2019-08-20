@@ -3,7 +3,6 @@ mod evaluation;
 extern crate clap;
 extern crate core;
 
-#[macro_use]
 extern crate maplit;
 
 use clap::{App, Arg};
@@ -34,7 +33,7 @@ fn run(filename: &str) -> Result<(), ()> {
 }
 
 fn main() {
-    let matches = App::new("Sample data generator")
+    let matches = App::new("Chop interpreter")
         .version("0.0.1")
         .author("Matthias Lochbrunner <matthias_lochbrunner@web.de>")
         .arg(

@@ -1,7 +1,14 @@
 {
     "cSpell.words": [
+        "alloca",
         "astified",
         "astify",
-        "ichop"
+        "ichop",
+        "noinline",
+        "nounwind",
+        "optnone",
+        "printf",
+        "uwtable",
+        "wchar"
     ]
 }
