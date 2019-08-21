@@ -4,6 +4,7 @@
         "astified",
         "astify",
         "cchop",
+        "elim",
         "ichop",
         "noinline",
         "nounwind",

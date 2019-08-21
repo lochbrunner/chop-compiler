@@ -4,6 +4,7 @@ mod exporter;
 mod generator;
 mod lexer;
 mod parser;
+mod simplifier;
 pub mod token;
 pub use exporter::{bytecode, llvm};
 
@@ -93,7 +94,8 @@ pub fn compile(code: &str) -> Result<Vec<ByteCode>, CompilerError> {
     let tokens = lexer::lex(code)?;
     let raw_ast = parser::parse(&context, &tokens)?;
     let ast = generator::generate(raw_ast)?;
-    exporter::bytecode::export(&context, ast)
+    let simple = simplifier::simplify(ast)?;
+    exporter::bytecode::export(&context, simple)
 }
 
 #[cfg(test)]

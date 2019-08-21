@@ -8,30 +8,46 @@ MILESTONES_DIR=$(dirname $0)
 
 FAILED=0
 
-CASES=(
-    "1/main.ch"
-    "1/advanced.ch"
-    "2/test.sh"
-    "3/operation.ch"
-    "3/function.ch"
-    "3/main.ch"
-)
+CASES=($(ls ./milestones/*/*.ch))
 
+printf "Testing interpeter\n"
 for CASE in "${CASES[@]}"; do
-    $MILESTONES_DIR/$CASE > /dev/null
+    printf "test $CASE ..."
+    actual=$($CASE)
+    expected=$(cat "${CASE%.*}".out)
+
     if test "$?" -ne "0"; then
         let "FAILED++"
-        echo -e "${RED}Test $CASE failed!$NC"
+        printf "${RED} crashed!$NC\n"
+    elif test "$actual" != "$expected" ;then
+        let "FAILED++"
+        printf "${RED} failed!$NC\n"
     else
-        echo -e "${GREEN}Test $CASE was ok.$NC"
+        printf "${GREEN} ok!$NC\n"
     fi
 done
 
+printf "\nTesting compiler\n"
+for CASE in "${CASES[@]}"; do
+    printf "test $CASE ..."
+    cchop $CASE -o build/main && actual=$(build/main)
+    expected=$(cat "${CASE%.*}".out)
+    if test "$?" -ne "0"; then
+        let "FAILED++"
+        echo -e "${RED} crashed!$NC"
+    elif test "$actual" != "$expected" ;then
+        let "FAILED++"
+        printf "${RED} failed!$NC\n"
+    else
+        printf "${GREEN} ok!$NC\n"
+    fi
+done
 
+printf "\n"
 if test "$FAILED" -eq "0"; then
-    echo -e "${GREEN}All Milestones tests succeeded!$NC"
+    echo -e "${GREEN}All milestones tests succeeded!$NC"
     exit 0
 else
-    echo -e "${RED}$FAILED Milestones tests failed!$NC"
+    echo -e "${RED}$FAILED milestones tests failed!$NC"
     exit 1
 fi
