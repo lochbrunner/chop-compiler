@@ -17,7 +17,7 @@ fn run(input: &str, output: &str) -> Result<(), ()> {
     let llvm_file = format!("{}/{}.ll", wd, file_stem);
 
     match fs::read_to_string(input) {
-        Ok(code) => match core::compile(&code, input) {
+        Ok(code) => match core::compile(&code) {
             Err(error) => {
                 error.print(input);
                 Err(())

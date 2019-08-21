@@ -8,12 +8,16 @@ extern crate maplit;
 use clap::{App, Arg};
 use std::fs;
 use std::io;
+// use std::str::Lines;
 
 fn run(filename: &str) -> Result<(), ()> {
     match fs::read_to_string(filename) {
-        Ok(code) => match core::compile(&code, filename) {
+        Ok(code) => match core::compile(&code) {
             Err(error) => {
                 error.print(filename);
+                if let Some(line) = code.lines().nth(error.location.line as usize - 1) {
+                    eprintln!("{}", line);
+                }
                 Err(())
             }
             Ok(bytecode) => {

@@ -3,6 +3,7 @@
         "alloca",
         "astified",
         "astify",
+        "cchop",
         "ichop",
         "noinline",
         "nounwind",

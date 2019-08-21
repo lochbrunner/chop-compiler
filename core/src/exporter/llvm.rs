@@ -95,6 +95,7 @@ pub fn export(instructions: &[ByteCode], source_filename: &str) -> Result<String
                 }
             },
             ByteCode::PushInt32(v) => stack.push(StackItem::Int32(*v)),
+            _ => ()
         }
     }
 

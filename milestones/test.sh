@@ -9,8 +9,12 @@ MILESTONES_DIR=$(dirname $0)
 FAILED=0
 
 CASES=(
-    "1/main.ch" "1/advanced.ch"
+    "1/main.ch"
+    "1/advanced.ch"
     "2/test.sh"
+    "3/operation.ch"
+    "3/function.ch"
+    "3/main.ch"
 )
 
 for CASE in "${CASES[@]}"; do

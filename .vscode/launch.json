@@ -7,15 +7,15 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug executable 'interpreter'",
+            "name": "Debug executable 'ichop'",
             "cargo": {
                 "args": [
                     "build",
-                    "--bin=interpreter",
-                    "--package=interpreter"
+                    "--bin=ichop",
+                    "--package=ichop"
                 ],
                 "filter": {
-                    "name": "interpreter",
+                    "name": "ichop",
                     "kind": "bin"
                 }
             },
@@ -28,20 +28,22 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug unit tests in executable 'interpreter'",
+            "name": "Debug unit tests in executable 'core'",
             "cargo": {
                 "args": [
                     "test",
                     "--no-run",
-                    "--bin=interpreter",
-                    "--package=interpreter"
+                    "--lib=core",
+                    "--package=core"
                 ],
                 "filter": {
-                    "name": "interpreter",
-                    "kind": "bin"
+                    "name": "core",
+                    "kind": "lib"
                 }
             },
-            "args": [],
+            "args": [
+                "e2e::multiple_statements"
+            ],
             "cwd": "${workspaceFolder}",
             "sourceLanguages": [
                 "rust"

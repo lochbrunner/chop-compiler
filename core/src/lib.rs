@@ -12,6 +12,7 @@ use crate::exporter::bytecode::ByteCode;
 #[macro_use]
 extern crate maplit;
 
+#[derive(PartialEq, Debug, Clone)]
 pub enum Type {
     Int32,
     Void,
@@ -19,17 +20,19 @@ pub enum Type {
 
 pub struct Declaration {
     // Later will be vector
-// pre: Vec<Type>,
-// post: Vec<Type>,
-// return_type: Type,
+    // pre: Vec<Type>,
+    post: Vec<Type>,
+    return_type: Type,
+    is_statement: bool,
 }
 
 impl Declaration {
-    pub fn function(_return_type: Type, _args: Vec<Type>) -> Declaration {
+    pub fn function(return_type: Type, args: Vec<Type>, is_statement: bool) -> Declaration {
         Declaration {
-            // return_type,
+            return_type,
             // pre: Vec::new(),
-            // post: args,
+            post: args,
+            is_statement,
         }
     }
 }
@@ -38,9 +41,25 @@ pub struct Context {
     pub declarations: HashMap<String, Declaration>,
 }
 
+impl Context {
+    pub fn get_declaration(
+        &self,
+        ident: &str,
+        location: token::Location,
+    ) -> Result<&Declaration, CompilerError> {
+        match self.declarations.get(ident) {
+            None => Err(CompilerError {
+                location,
+                msg: format!("Function {} was not defined.", ident),
+            }),
+            Some(dec) => Ok(dec),
+        }
+    }
+}
+
 #[derive(Debug, PartialEq)]
 pub struct CompilerError {
-    location: token::Location,
+    pub location: token::Location,
     msg: String,
 }
 
@@ -52,25 +71,35 @@ impl CompilerError {
         );
         eprintln!("{}", self.msg);
     }
+
+    pub fn global(msg: &str) -> CompilerError {
+        CompilerError {
+            location: token::Location { offset: 0, line: 0 },
+            msg: msg.to_string(),
+        }
+    }
 }
 
-pub fn compile(code: &str, filename: &str) -> Result<Vec<ByteCode>, CompilerError> {
+pub fn compile(code: &str) -> Result<Vec<ByteCode>, CompilerError> {
     // Milestone 1 context
     let context = Context {
         declarations: hashmap! {
-            "stdout".to_owned() => Declaration::function(Type::Void, vec![Type::Int32])
+            "stdout".to_string() => Declaration::function(Type::Void, vec![Type::Int32], true),
+            "max".to_string() => Declaration::function(Type::Int32, vec![Type::Int32,Type::Int32], false),
+            "int".to_string() => Declaration::function(Type::Int32, vec![Type::Int32,Type::Int32], false)
         },
     };
 
-    let tokens = lexer::lex(code, filename)?;
+    let tokens = lexer::lex(code)?;
     let raw_ast = parser::parse(&context, &tokens)?;
     let ast = generator::generate(raw_ast)?;
-    exporter::bytecode::export(ast)
+    exporter::bytecode::export(&context, ast)
 }
 
 #[cfg(test)]
-mod specs {
+mod e2e {
     use super::*;
+    use ByteCode::*;
 
     #[test]
     fn milestone_1() {
@@ -78,12 +107,11 @@ mod specs {
             &"#!/usr/bin/env ichop
 
             42 | stdout",
-            &"test.ch",
         );
         assert!(actual.is_ok());
         let actual = actual.unwrap();
 
-        let expected = vec![ByteCode::PushInt32(42), ByteCode::StdOut];
+        let expected = vec![PushInt32(42), StdOut];
 
         assert_eq!(actual, expected);
     }
@@ -95,18 +123,12 @@ mod specs {
 
             42 | stdout
             35 | stdout",
-            &"test.ch",
         );
 
         assert!(actual.is_ok());
         let actual = actual.unwrap();
 
-        let expected = vec![
-            ByteCode::PushInt32(42),
-            ByteCode::StdOut,
-            ByteCode::PushInt32(35),
-            ByteCode::StdOut,
-        ];
+        let expected = vec![PushInt32(42), StdOut, PushInt32(35), StdOut];
 
         assert_eq!(actual, expected);
     }
@@ -118,20 +140,34 @@ mod specs {
         42 | stdout
         stdout(35)
         stdout 28",
-            &"test.ch",
         );
 
         assert!(actual.is_ok());
         let actual = actual.unwrap();
 
         let expected = vec![
-            ByteCode::PushInt32(42),
-            ByteCode::StdOut,
-            ByteCode::PushInt32(35),
-            ByteCode::StdOut,
-            ByteCode::PushInt32(28),
-            ByteCode::StdOut,
+            PushInt32(42),
+            StdOut,
+            PushInt32(35),
+            StdOut,
+            PushInt32(28),
+            StdOut,
         ];
+
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn milestone_3_function() {
+        let actual = compile(
+            &"#!/usr/bin/env ichop
+
+            stdout max(3,5)",
+        );
+
+        assert!(actual.is_ok());
+        let actual = actual.unwrap();
+        let expected = vec![PushInt32(3), PushInt32(5), Max, StdOut];
 
         assert_eq!(actual, expected);
     }

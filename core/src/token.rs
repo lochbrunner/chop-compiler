@@ -1,3 +1,5 @@
+use std::fmt;
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Location {
     pub line: u32,
@@ -21,8 +23,14 @@ pub enum TokenPayload {
     Pipe, // |
     // Modifiers
     // Mutable, // mut,
-
-    // Delimiters
+    // Mathematical
+    Multiply,  // *
+    Divide,    // /
+    Add,       // +
+    Subtract,  // -
+    Remainder, // %
+    // Punctuation
+    Delimiter, // ,
     // Dot,
     ParenthesesL,
     ParenthesesR,
@@ -30,10 +38,27 @@ pub enum TokenPayload {
     // BraceR,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub struct Token {
     pub token: TokenPayload,
     pub begin: Location,
     pub end: Location,
     // pub filename: &str,
+}
+
+impl fmt::Debug for Token {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:?}", self.token)
+    }
+}
+
+#[cfg(test)]
+impl Token {
+    pub fn stub(token: TokenPayload) -> Token {
+        Token {
+            token,
+            begin: Location { line: 0, offset: 0 },
+            end: Location { line: 0, offset: 0 },
+        }
+    }
 }
