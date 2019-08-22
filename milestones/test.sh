@@ -13,8 +13,8 @@ CASES=($(ls ./milestones/*/*.ch))
 printf "Testing interpeter\n"
 for CASE in "${CASES[@]}"; do
     printf "test $CASE ..."
-    actual=$($CASE)
     expected=$(cat "${CASE%.*}".out)
+    actual=$($CASE)
 
     if test "$?" -ne "0"; then
         let "FAILED++"
@@ -23,23 +23,23 @@ for CASE in "${CASES[@]}"; do
         let "FAILED++"
         printf "${RED} failed!$NC\n"
     else
-        printf "${GREEN} ok!$NC\n"
+        printf "${GREEN} ok$NC\n"
     fi
 done
 
 printf "\nTesting compiler\n"
 for CASE in "${CASES[@]}"; do
-    printf "test $CASE ..."
-    cchop $CASE -o build/main && actual=$(build/main)
+    printf "test $CASE ... "
     expected=$(cat "${CASE%.*}".out)
+    cchop $CASE -o build/main && actual=$(build/main)
     if test "$?" -ne "0"; then
         let "FAILED++"
-        echo -e "${RED} crashed!$NC"
+        echo -e "${RED}crashed!$NC"
     elif test "$actual" != "$expected" ;then
         let "FAILED++"
-        printf "${RED} failed!$NC\n"
+        printf "${RED}failed!$NC\n"
     else
-        printf "${GREEN} ok!$NC\n"
+        printf "${GREEN}ok$NC\n"
     fi
 done
 

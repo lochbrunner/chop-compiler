@@ -3,6 +3,8 @@ use std::collections::HashMap;
 
 use crate::bytecode::ByteCode;
 
+mod buildins;
+
 fn write_header(source_filename: &str, code: &mut String) {
     code.push_str(&format!("; ModuleID = '{}\n", source_filename));
     code.push_str(&format!("source_filename = \"{}\"\n", source_filename));
@@ -28,7 +30,7 @@ fn write_footer(code: &mut String) {
     code.push_str("\n");
     code.push_str("!0 = !{i32 1, !\"wchar_size\", i32 4}\n");
     // TODO: put our selves in this?
-    code.push_str("!1 = !{!\"clang version 8.0.0-3 (tags/RELEASE_800/final)\"}\n");
+    code.push_str("!1 = !{!\"cchop version 0.0.1\"}\n");
 }
 
 fn write_attribute(index: u32, attr: HashMap<&str, &str>, code: &mut String) {
@@ -55,6 +57,54 @@ fn write_attribute(index: u32, attr: HashMap<&str, &str>, code: &mut String) {
 /// Same as in evaluation
 enum StackItem {
     Int32(i32),
+    Ref(usize),
+}
+
+fn store_i32(index: usize, value: i32, code: &mut String) {
+    code.push_str(&format!("  %{} = alloca i32, align 4\n", index));
+    code.push_str(&format!(
+        "  store i32 {}, i32* %{}, align 4\n",
+        value, index
+    ));
+}
+
+fn get_last_item_rep_i32(stack: &mut Vec<StackItem>) -> Result<String, CompilerError> {
+    match stack.pop() {
+        None => Err(CompilerError::global("Missing argument on stack")),
+        Some(item) => match item {
+            StackItem::Int32(v) => Ok(v.to_string()),
+            StackItem::Ref(r) => Ok(format!("%{}", r)),
+        },
+    }
+}
+
+fn call_stdout(
+    register_counter: &mut usize,
+    stack: &mut Vec<StackItem>,
+    code: &mut String,
+) -> Result<(), CompilerError> {
+    let arg = get_last_item_rep_i32(stack)?;
+    *register_counter += 1;
+    code.push_str(&format!("  %{} = call i32 (i8*, ...) @printf(i8* getelementptr inbounds ([4 x i8], [4 x i8]* @.str, i32 0, i32 0), i32 {})\n", 
+                                    register_counter, arg));
+    Ok(())
+}
+
+fn call_i32_function_i32_i32(
+    function_name: &str,
+    register_counter: &mut usize,
+    stack: &mut Vec<StackItem>,
+    code: &mut String,
+) -> Result<(), CompilerError> {
+    let a = get_last_item_rep_i32(stack)?;
+    let b = get_last_item_rep_i32(stack)?;
+    *register_counter += 1;
+    code.push_str(&format!(
+        "  %{} = call i32 @{}(i32 {},i32 {})\n",
+        register_counter, function_name, a, b
+    ));
+    stack.push(StackItem::Ref(*register_counter));
+    Ok(())
 }
 
 pub fn export(instructions: &[ByteCode], source_filename: &str) -> Result<String, CompilerError> {
@@ -63,39 +113,33 @@ pub fn export(instructions: &[ByteCode], source_filename: &str) -> Result<String
     write_header(source_filename, &mut code);
     write_empty_line(&mut code);
     write_format_string(&mut code);
+    buildins::write_min_function(&mut code);
+    buildins::write_max_function(&mut code);
     write_empty_line(&mut code);
     // The main function
     code.push_str("; Function Attrs: noinline nounwind optnone uwtable\n");
     code.push_str("define dso_local i32 @main() #0 {\n");
-    code.push_str("  %1 = alloca i32, align 4\n");
-    code.push_str("  store i32 0, i32* %1, align 4\n");
+    store_i32(1, 0, &mut code);
 
-    let mut stack_counter = 1;
+    let mut register_counter = 1;
 
     let mut stack: Vec<StackItem> = Vec::new();
     for instruction in instructions.iter() {
         match instruction {
-            ByteCode::StdOut => match stack.pop() {
-                Some(stack_item) => match stack_item {
-                    StackItem::Int32(v) => {
-                        stack_counter += 1;
-                        code.push_str(&format!(
-                                    "  %{} = call i32 (i8*, ...) @printf(i8* getelementptr inbounds ([4 x i8], [4 x i8]* @.str, i32 0, i32 0), i32 {})\n", 
-                                    stack_counter, v));
-                    }
-                },
-                None => {
-                    return Err(CompilerError {
-                        location: crate::token::Location { line: 0, offset: 0 },
-                        msg: format!(
-                        "Exporter Error: Function stdout expects an int as argument but got {:?}",
-                        instruction
-                    ),
-                    })
-                }
-            },
+            ByteCode::StdOut => call_stdout(&mut register_counter, &mut stack, &mut code)?,
             ByteCode::PushInt32(v) => stack.push(StackItem::Int32(*v)),
-            _ => (),
+            ByteCode::Max => {
+                call_i32_function_i32_i32("max", &mut register_counter, &mut stack, &mut code)?;
+            }
+            ByteCode::Min => {
+                call_i32_function_i32_i32("min", &mut register_counter, &mut stack, &mut code)?;
+            }
+            _ => {
+                return Err(CompilerError::global(&format!(
+                    "Unknown instruction {:?}",
+                    instruction
+                )))
+            }
         }
     }
 

@@ -3,6 +3,7 @@
         "alloca",
         "astified",
         "astify",
+        "buildins",
         "cchop",
         "elim",
         "ichop",
