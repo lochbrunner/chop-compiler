@@ -18,6 +18,7 @@ fn pop_as_int32(stack: &mut Vec<StackItem>) -> Result<i32, String> {
 
 pub fn evaluate(code: &[ByteCode], writer: &mut dyn Write) -> Result<(), String> {
     let mut stack: Vec<StackItem> = Vec::new();
+    let mut register: Vec<i32> = Vec::new();
     for instruction in code.iter() {
         match instruction {
             // Build ins
@@ -62,6 +63,17 @@ pub fn evaluate(code: &[ByteCode], writer: &mut dyn Write) -> Result<(), String>
                 let b = pop_as_int32(&mut stack)?;
                 let a = pop_as_int32(&mut stack)?;
                 stack.push(StackItem::Int32(a % b))
+            }
+            ByteCode::StoreInt32(_) => {
+                let a = pop_as_int32(&mut stack)?;
+                register.push(a);
+            }
+            ByteCode::LoadInt32(index) => {
+                if register.len() - 1 < *index {
+                    return Err(format!("No value in register at {}", *index));
+                }
+                let value = register[*index];
+                stack.push(StackItem::Int32(value));
             }
         }
     }

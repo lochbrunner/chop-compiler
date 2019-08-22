@@ -4,13 +4,14 @@
 
 The Compiler for has these data flow chain
 
-* *Lexer*
-* *Parser*
+* *Lexer*: Code -> tokens
+* *Parser*: Token -> AST
+* *Simplifier*: Removes simple overhead (e.g. 3*5 -> 15)
 * *Generator* (also planed: *Injector* & *Checker*)
+* *Compiler*: AST -> byte-code
 * *Exporter*
   * Interpreter byte-code
-  * planed: llvm
-  * planed: chop IR
+  * LLVM: byte-code -> LLVM-IR
 
 ## Challenges
 

@@ -871,17 +871,17 @@ mod specs {
 
         assert!(context.declarations.get("a").is_some());
         let actual = context.declarations.get("a").unwrap();
-        let expected = Declaration::function(Type::Int32, vec![], false);
+        let expected = Declaration::variable(Type::Int32);
         assert_eq!(actual, &expected);
 
         assert!(context.declarations.get("b").is_some());
         let actual = context.declarations.get("b").unwrap();
-        let expected = Declaration::function(Type::Int32, vec![], false);
+        let expected = Declaration::variable(Type::Int32);
         assert_eq!(actual, &expected);
 
         assert!(context.declarations.get("c").is_some());
         let actual = context.declarations.get("c").unwrap();
-        let expected = Declaration::function(Type::Int32, vec![], false);
+        let expected = Declaration::variable(Type::Int32);
         assert_eq!(actual, &expected);
     }
 }

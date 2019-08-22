@@ -37,6 +37,14 @@ impl Declaration {
             is_statement,
         }
     }
+    pub fn variable(return_type: Type) -> Declaration {
+        Declaration {
+            return_type,
+            // pre: Vec::new(),
+            post: vec![],
+            is_statement: false,
+        }
+    }
 }
 
 #[derive(Debug)]

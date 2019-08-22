@@ -38,6 +38,16 @@ pub enum TokenPayload {
     // BraceR,
 }
 
+impl TokenPayload {
+    pub fn get_ident(&self) -> Option<&str> {
+        if let TokenPayload::Ident(ref ident) = self {
+            Some(ident)
+        } else {
+            None
+        }
+    }
+}
+
 #[derive(Clone, PartialEq)]
 pub struct Token {
     pub token: TokenPayload,
