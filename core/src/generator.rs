@@ -13,6 +13,7 @@ pub fn generate(ast: Ast) -> Result<Ast, CompilerError> {
                 args: vec![statement.args[0].clone()],
             }),
             TokenPayload::Ident(_) => Ok(statement), // Function Call
+            TokenPayload::DefineLocal => Ok(statement),
             _ => Err(CompilerError {
                 location: statement.root.begin.clone(),
                 msg: format!(

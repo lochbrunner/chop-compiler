@@ -569,4 +569,44 @@ mod specs {
     assert_eq!(actual, expected);
   }
 
+  #[test]
+  fn milestone_4() {
+    let actual = lex(
+      &"#!/usr/bin/env ichop
+
+        a := 3
+        b := a + 5
+        c := 7
+
+        stdout max(b*c)",
+    );
+
+    assert!(actual.is_ok());
+    let actual = actual.unwrap();
+    let actual = actual.into_iter().map(|t| t.token).collect::<Vec<_>>();
+
+    let expected = vec![
+      Ident("a".to_string()),
+      DefineLocal,
+      Int32(3),
+      Ident("b".to_string()),
+      DefineLocal,
+      Ident("a".to_string()),
+      Add,
+      Int32(5),
+      Ident("c".to_string()),
+      DefineLocal,
+      Int32(7),
+      Ident("stdout".to_string()),
+      Ident("max".to_string()),
+      ParenthesesL,
+      Ident("b".to_string()),
+      Multiply,
+      Ident("c".to_string()),
+      ParenthesesR,
+    ];
+
+    assert_eq!(actual, expected);
+  }
+
 }

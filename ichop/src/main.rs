@@ -8,7 +8,6 @@ extern crate maplit;
 use clap::{App, Arg};
 use std::fs;
 use std::io;
-// use std::str::Lines;
 
 fn run(filename: &str) -> Result<(), ()> {
     match fs::read_to_string(filename) {

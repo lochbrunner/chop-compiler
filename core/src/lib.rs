@@ -19,6 +19,7 @@ pub enum Type {
     Void,
 }
 
+#[derive(PartialEq, Debug)]
 pub struct Declaration {
     // Later will be vector
     // pre: Vec<Type>,
@@ -38,6 +39,7 @@ impl Declaration {
     }
 }
 
+#[derive(Debug)]
 pub struct Context {
     pub declarations: HashMap<String, Declaration>,
 }
@@ -79,20 +81,27 @@ impl CompilerError {
             msg: msg.to_string(),
         }
     }
+
+    pub fn from_token(token: &token::Token, msg: String) -> CompilerError {
+        CompilerError {
+            location: token.begin.clone(),
+            msg,
+        }
+    }
 }
 
 pub fn compile(code: &str) -> Result<Vec<ByteCode>, CompilerError> {
     // Milestone 1 context
-    let context = Context {
+    let mut context = Context {
         declarations: hashmap! {
             "stdout".to_string() => Declaration::function(Type::Void, vec![Type::Int32], true),
             "max".to_string() => Declaration::function(Type::Int32, vec![Type::Int32,Type::Int32], false),
-            "int".to_string() => Declaration::function(Type::Int32, vec![Type::Int32,Type::Int32], false)
+            "min".to_string() => Declaration::function(Type::Int32, vec![Type::Int32,Type::Int32], false)
         },
     };
 
     let tokens = lexer::lex(code)?;
-    let raw_ast = parser::parse(&context, &tokens)?;
+    let raw_ast = parser::parse(&mut context, &tokens)?;
     let ast = generator::generate(raw_ast)?;
     let simple = simplifier::simplify(ast)?;
     exporter::bytecode::export(&context, simple)

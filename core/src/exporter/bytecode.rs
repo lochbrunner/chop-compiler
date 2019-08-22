@@ -24,7 +24,7 @@ fn get_build_ins(ident: &str, location: &Location) -> Result<ByteCode, CompilerE
         "max" => Ok(ByteCode::Max),
         _ => Err(CompilerError {
             location: location.clone(),
-            msg: format!("No build-in function {} was not defined.", ident),
+            msg: format!("No build-in function \"{}\" was defined.", ident),
         }),
     }
 }

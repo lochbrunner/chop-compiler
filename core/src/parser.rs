@@ -1,7 +1,7 @@
 use crate::ast;
 use crate::token::{Token, TokenPayload};
 use crate::CompilerError;
-use crate::Context;
+use crate::{Context, Declaration, Type};
 
 #[derive(PartialEq, PartialOrd, Debug, Clone)]
 pub enum Precedence {
@@ -52,6 +52,18 @@ impl ParseStack {
             Some(last) => last.precedence > *precedence,
         }
     }
+
+    /// For instance a := b+c
+    pub fn is_completable(&self) -> bool {
+        let needed_symbols = self.infix.iter().fold(0, |acc, op| acc + op.req_args_count);
+        let left_braces = self
+            .infix
+            .iter()
+            .filter(|op| op.token.token == TokenPayload::ParenthesesL)
+            .fold(0, |acc, _| acc + 1);
+        let available_symbols = self.symbol.len() + self.infix.len();
+        available_symbols - left_braces == needed_symbols + 1
+    }
 }
 
 fn astify(_context: &Context, till: Precedence, stack: &mut ParseStack) -> Result<(), String> {
@@ -91,15 +103,65 @@ fn astify(_context: &Context, till: Precedence, stack: &mut ParseStack) -> Resul
     Ok(())
 }
 
+fn create_statement(
+    context: &mut Context,
+    stack: &mut ParseStack,
+) -> Result<ast::Node<Token>, CompilerError> {
+    while let Some(op) = stack.infix.pop() {
+        // How much args does the op need?
+        if stack.symbol.len() < op.req_args_count {
+            return Err(CompilerError {
+                location: op.token.begin.clone(),
+                msg: format!("Expecting at least {} arguments", op.req_args_count),
+            });
+        }
+
+        let mut args = (0..op.req_args_count)
+            .map(|_| stack.pop_symbol_as_node().unwrap())
+            .collect::<Vec<_>>();
+        args.reverse();
+        let node = ast::Node {
+            root: op.token,
+            args,
+        };
+        if op.is_statement {
+            if node.root.token == TokenPayload::DefineLocal {
+                // TODO: First attempt only
+                // Get ident
+                let first_token = &node.args.iter().nth(0).unwrap().root.token;
+                if let TokenPayload::Ident(ref ident) = first_token {
+                    context.declarations.insert(
+                        ident.clone(),
+                        Declaration::function(Type::Int32, vec![], false),
+                    );
+                } else {
+                    return Err(CompilerError::global(&format!(
+                        "Left of definition must be an identifier, not {:?}",
+                        node.args
+                    )));
+                }
+            }
+            return Ok(node);
+        } else {
+            stack.symbol.push(Symbol::Finished(node));
+        }
+    }
+    Err(CompilerError::global(&format!(
+        "Parser could not process all tokens. Remaining are {:?}",
+        stack.symbol
+    )))
+}
+
 /// Turns a slice of tokens into an ast.
 /// Using [Shunting-yard algorithm](https://en.wikipedia.org/wiki/Shunting-yard_algorithm#/media/File:Shunting_yard.svg)
-pub fn parse(context: &Context, tokens: &[Token]) -> Result<ast::Ast, CompilerError> {
+pub fn parse(context: &mut Context, tokens: &[Token]) -> Result<ast::Ast, CompilerError> {
     let mut stack = ParseStack {
         infix: Vec::new(),
         symbol: Vec::new(),
     };
 
     let mut expect_function_as_variable = false;
+    let mut statements = Vec::new();
 
     for token in tokens.iter() {
         match &token.token {
@@ -111,18 +173,18 @@ pub fn parse(context: &Context, tokens: &[Token]) -> Result<ast::Ast, CompilerEr
             }),
             TokenPayload::Delimiter => {
                 if let Err(msg) = astify(context, Precedence::POpening, &mut stack) {
-                    return Err(CompilerError {
-                        location: token.begin.clone(),
-                        msg: format!("Error on astify: {}", msg),
-                    });
+                    return Err(CompilerError::from_token(
+                        token,
+                        format!("Error on astify: {}", msg),
+                    ));
                 }
             }
             TokenPayload::ParenthesesR => {
                 if let Err(msg) = astify(context, Precedence::POpening, &mut stack) {
-                    return Err(CompilerError {
-                        location: token.begin.clone(),
-                        msg: format!("Error on astify: {}", msg),
-                    });
+                    return Err(CompilerError::from_token(
+                        token,
+                        format!("Error on astify: {}", msg),
+                    ));
                 }
                 stack.infix.pop();
             }
@@ -130,26 +192,59 @@ pub fn parse(context: &Context, tokens: &[Token]) -> Result<ast::Ast, CompilerEr
                 if expect_function_as_variable {
                     stack.symbol.push(Symbol::Raw(token.clone()));
                 } else {
-                    let declaration = match context.declarations.get(ident) {
+                    if stack.is_completable() {
+                        statements.push(create_statement(context, &mut stack)?);
+                    }
+                    match context.declarations.get(ident) {
                         None => {
-                            return Err(CompilerError {
-                                location: token.begin.clone(),
-                                msg: format!("Function {} was not defined.", ident),
-                            })
+                            if !(stack.infix.is_empty() && stack.symbol.is_empty()) {
+                                return Err(CompilerError::from_token(
+                                    token,
+                                    format!("Symbol {} was not defined.", ident),
+                                ));
+                            } else {
+                                // New declaration?
+                                // current_definition_ident = Some(&token);
+                                stack.symbol.push(Symbol::Raw(token.clone()));
+                            }
                         }
-                        Some(declaration) => declaration,
+                        Some(declaration) => {
+                            if declaration.post.is_empty() {
+                                stack.symbol.push(Symbol::Raw(token.clone()));
+                            } else {
+                                stack.infix.push(Infix {
+                                    token: token.clone(),
+                                    precedence: Precedence::PCall,
+                                    req_args_count: declaration.post.len(),
+                                    is_statement: declaration.is_statement,
+                                });
+                            }
+                        }
                     };
-                    stack.infix.push(Infix {
-                        token: token.clone(),
-                        precedence: Precedence::PCall,
-                        req_args_count: declaration.post.len(),
-                        is_statement: declaration.is_statement,
-                    });
                 }
                 expect_function_as_variable = false;
             }
-            TokenPayload::Int32(_) => stack.symbol.push(Symbol::Raw(token.clone())),
-            TokenPayload::DefineLocal => (), // TODO: use later
+            TokenPayload::Int32(_) => {
+                if stack.is_completable() {
+                    statements.push(create_statement(context, &mut stack)?);
+                }
+                stack.symbol.push(Symbol::Raw(token.clone()));
+            }
+            TokenPayload::DefineLocal => {
+                if stack.symbol.is_empty() {
+                    return Err(CompilerError {
+                        location: token.begin.clone(),
+                        msg: "No identifer for new definition found!".to_string(),
+                    });
+                } else {
+                    stack.infix.push(Infix {
+                        is_statement: true,
+                        req_args_count: 2,
+                        token: token.clone(),
+                        precedence: Precedence::PCall,
+                    });
+                }
+            }
             TokenPayload::Pipe => {
                 if stack.check_precedence(&Precedence::Pipe) {
                     if let Err(msg) = astify(context, Precedence::Pipe, &mut stack) {
@@ -201,29 +296,8 @@ pub fn parse(context: &Context, tokens: &[Token]) -> Result<ast::Ast, CompilerEr
         }
     }
 
-    let mut statements = Vec::new();
-    while let Some(op) = stack.infix.pop() {
-        // How much args does the op need?
-        if stack.symbol.len() < op.req_args_count {
-            return Err(CompilerError {
-                location: op.token.begin.clone(),
-                msg: format!("Expecting at least {} arguments", op.req_args_count),
-            });
-        }
-
-        let mut args = (0..op.req_args_count)
-            .map(|_| stack.pop_symbol_as_node().unwrap())
-            .collect::<Vec<_>>();
-        args.reverse();
-        let node = ast::Node {
-            root: op.token,
-            args,
-        };
-        if op.is_statement {
-            statements.push(node);
-        } else {
-            stack.symbol.push(Symbol::Finished(node));
-        }
+    if stack.is_completable() {
+        statements.push(create_statement(context, &mut stack)?);
     }
 
     if !stack.symbol.is_empty() {
@@ -232,8 +306,6 @@ pub fn parse(context: &Context, tokens: &[Token]) -> Result<ast::Ast, CompilerEr
             stack.symbol
         )));
     }
-
-    statements.reverse();
 
     Ok(ast::Ast { statements })
 }
@@ -252,13 +324,13 @@ mod specs {
             Token::stub(Ident("stdout".to_string())),
         ];
 
-        let context = Context {
+        let mut context = Context {
             declarations: hashmap! {
                 "stdout".to_owned() => Declaration::function(Type::Void, vec![Type::Int32], true)
             },
         };
 
-        let actual = parse(&context, &tokens);
+        let actual = parse(&mut context, &tokens);
         assert!(actual.is_ok());
         let actual = actual.unwrap();
 
@@ -284,13 +356,13 @@ mod specs {
             Token::stub(ParenthesesR),
         ];
 
-        let context = Context {
+        let mut context = Context {
             declarations: hashmap! {
                 "stdout".to_owned() => Declaration::function(Type::Void, vec![Type::Int32], true)
             },
         };
 
-        let actual = parse(&context, &tokens);
+        let actual = parse(&mut context, &tokens);
 
         assert!(actual.is_ok());
         let actual = actual.unwrap();
@@ -315,13 +387,13 @@ mod specs {
             Token::stub(Int32(42)),
         ];
 
-        let context = Context {
+        let mut context = Context {
             declarations: hashmap! {
                 "stdout".to_owned() => Declaration::function(Type::Void, vec![Type::Int32], true)
             },
         };
 
-        let actual = parse(&context, &tokens);
+        let actual = parse(&mut context, &tokens);
 
         assert!(actual.is_ok());
         let actual = actual.unwrap();
@@ -347,13 +419,13 @@ mod specs {
             Token::stub(Int32(5)),
         ];
 
-        let context = Context {
+        let mut context = Context {
             declarations: hashmap! {
                 "stdout".to_owned() => Declaration::function(Type::Void, vec![Type::Int32], true)
             },
         };
 
-        let actual = parse(&context, &tokens);
+        let actual = parse(&mut context, &tokens);
 
         assert!(actual.is_ok());
         let actual = actual.unwrap();
@@ -392,13 +464,13 @@ mod specs {
             Token::stub(Int32(7)),
         ];
 
-        let context = Context {
+        let mut context = Context {
             declarations: hashmap! {
                 "stdout".to_owned() => Declaration::function(Type::Void, vec![Type::Int32], true)
             },
         };
 
-        let actual = parse(&context, &tokens);
+        let actual = parse(&mut context, &tokens);
 
         assert!(actual.is_ok());
         let actual = actual.unwrap();
@@ -449,13 +521,13 @@ mod specs {
             Token::stub(Int32(7)),
         ];
 
-        let context = Context {
+        let mut context = Context {
             declarations: hashmap! {
                 "stdout".to_owned() => Declaration::function(Type::Void, vec![Type::Int32], true)
             },
         };
 
-        let actual = parse(&context, &tokens);
+        let actual = parse(&mut context, &tokens);
 
         assert!(actual.is_ok());
         let actual = actual.unwrap();
@@ -505,7 +577,7 @@ mod specs {
             ParenthesesR,
         ];
 
-        let context = Context {
+        let mut context = Context {
             declarations: hashmap! {
                 "stdout".to_string() => Declaration::function(Type::Void, vec![Type::Int32], true),
                 "max".to_string() => Declaration::function(Type::Void, vec![Type::Int32,Type::Int32], false)
@@ -513,7 +585,7 @@ mod specs {
         };
 
         let actual = parse(
-            &context,
+            &mut context,
             &tokens
                 .into_iter()
                 .map(|t| Token::stub(t))
@@ -567,7 +639,7 @@ mod specs {
             ParenthesesR,
         ];
 
-        let context = Context {
+        let mut context = Context {
             declarations: hashmap! {
                 "stdout".to_owned() => Declaration::function(Type::Void, vec![Type::Int32], true),
                 "max".to_owned() => Declaration::function(Type::Void, vec![Type::Int32,Type::Int32], false)
@@ -575,7 +647,7 @@ mod specs {
         };
 
         let actual = parse(
-            &context,
+            &mut context,
             &tokens
                 .into_iter()
                 .map(|t| Token::stub(t))
@@ -618,5 +690,198 @@ mod specs {
         };
 
         assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn milestone_4_definition_with_value() {
+        let tokens = vec![
+            // a := 3
+            Ident("a".to_string()),
+            DefineLocal,
+            Int32(3),
+        ];
+
+        let mut context = Context {
+            declarations: hashmap! {},
+        };
+
+        let actual = parse(
+            &mut context,
+            &tokens
+                .into_iter()
+                .map(|t| Token::stub(t))
+                .collect::<Vec<_>>(),
+        );
+
+        assert!(actual.is_ok());
+        let actual = actual.unwrap();
+        let actual = ast::DebugAst::from(actual);
+        let expected = DebugAst {
+            statements: vec![Node {
+                root: DefineLocal,
+                args: vec![Node::new(Ident("a".to_string())), Node::new(Int32(3))],
+            }],
+        };
+        assert_eq!(actual, expected);
+        // Declaration
+        assert!(context.declarations.get("a").is_some());
+        let actual_declaration = context.declarations.get("a").unwrap();
+        let expected_declaration = Declaration::function(Type::Int32, vec![], false);
+
+        assert_eq!(actual_declaration, &expected_declaration);
+    }
+
+    #[test]
+    fn milestone_4_definition_with_term() {
+        let tokens = vec![
+            // a := 3+5
+            Ident("a".to_string()),
+            DefineLocal,
+            Int32(3),
+            Add,
+            Int32(5),
+        ];
+
+        let mut context = Context {
+            declarations: hashmap! {},
+        };
+
+        let actual = parse(
+            &mut context,
+            &tokens
+                .into_iter()
+                .map(|t| Token::stub(t))
+                .collect::<Vec<_>>(),
+        );
+
+        assert!(actual.is_ok());
+        let actual = actual.unwrap();
+        let actual = ast::DebugAst::from(actual);
+        let expected = DebugAst {
+            statements: vec![Node {
+                root: DefineLocal,
+                args: vec![
+                    Node {
+                        root: Ident("a".to_string()),
+                        args: vec![],
+                    },
+                    Node {
+                        root: Add,
+                        args: vec![
+                            Node {
+                                root: Int32(3),
+                                args: vec![],
+                            },
+                            Node {
+                                root: Int32(5),
+                                args: vec![],
+                            },
+                        ],
+                    },
+                ],
+            }],
+        };
+        assert_eq!(actual, expected);
+        // Declaration
+        assert!(context.declarations.get("a").is_some());
+        let actual_declaration = context.declarations.get("a").unwrap();
+        let expected_declaration = Declaration::function(Type::Int32, vec![], false);
+
+        assert_eq!(actual_declaration, &expected_declaration);
+    }
+
+    #[test]
+    fn milestone_4_main() {
+        let tokens = vec![
+            // a := 3
+            Ident("a".to_string()),
+            DefineLocal,
+            Int32(3),
+            // b := a + 5
+            Ident("b".to_string()),
+            DefineLocal,
+            Ident("a".to_string()),
+            Add,
+            Int32(5),
+            // c := 7
+            Ident("c".to_string()),
+            DefineLocal,
+            Int32(7),
+            // stdout max(b,c)
+            Ident("stdout".to_string()),
+            Ident("max".to_string()),
+            ParenthesesL,
+            Ident("b".to_string()),
+            Delimiter,
+            Ident("c".to_string()),
+            ParenthesesR,
+        ];
+
+        let mut context = Context {
+            declarations: hashmap! {
+                "stdout".to_owned() => Declaration::function(Type::Void, vec![Type::Int32], true),
+                "max".to_owned() => Declaration::function(Type::Void, vec![Type::Int32,Type::Int32], false)
+            },
+        };
+
+        let actual = parse(
+            &mut context,
+            &tokens
+                .into_iter()
+                .map(|t| Token::stub(t))
+                .collect::<Vec<_>>(),
+        );
+
+        assert!(actual.is_ok());
+        let actual = ast::DebugAst::from(actual.unwrap());
+        let expected = DebugAst {
+            statements: vec![
+                Node {
+                    root: DefineLocal,
+                    args: vec![Node::new(Ident("a".to_string())), Node::new(Int32(3))],
+                },
+                Node {
+                    root: DefineLocal,
+                    args: vec![
+                        Node::new(Ident("b".to_string())),
+                        Node {
+                            root: Add,
+                            args: vec![Node::new(Ident("a".to_string())), Node::new(Int32(5))],
+                        },
+                    ],
+                },
+                Node {
+                    root: DefineLocal,
+                    args: vec![Node::new(Ident("c".to_string())), Node::new(Int32(7))],
+                },
+                Node {
+                    root: Ident("stdout".to_string()),
+                    args: vec![Node {
+                        root: Ident("max".to_string()),
+                        args: vec![
+                            Node::new(Ident("b".to_string())),
+                            Node::new(Ident("c".to_string())),
+                        ],
+                    }],
+                },
+            ],
+        };
+
+        assert_eq!(actual, expected);
+
+        assert!(context.declarations.get("a").is_some());
+        let actual = context.declarations.get("a").unwrap();
+        let expected = Declaration::function(Type::Int32, vec![], false);
+        assert_eq!(actual, &expected);
+
+        assert!(context.declarations.get("b").is_some());
+        let actual = context.declarations.get("b").unwrap();
+        let expected = Declaration::function(Type::Int32, vec![], false);
+        assert_eq!(actual, &expected);
+
+        assert!(context.declarations.get("c").is_some());
+        let actual = context.declarations.get("c").unwrap();
+        let expected = Declaration::function(Type::Int32, vec![], false);
+        assert_eq!(actual, &expected);
     }
 }

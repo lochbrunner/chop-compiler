@@ -6,7 +6,6 @@ pub struct Node<T> {
     pub args: Vec<Node<T>>,
 }
 
-#[cfg(test)]
 impl<T> Node<T> {
     pub fn new(token: T) -> Node<T> {
         Node {

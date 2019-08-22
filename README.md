@@ -44,5 +44,18 @@ cchop <code filename> -o <output filename>
 1. [Compile MVP via LLVM](./milestones/2) :heavy_check_mark:
 1. [Mathematical operations and build-in functions](./milestones/3) :heavy_check_mark:
 1. [Variables](./milestones/4)
+1. Primitive Types
 1. Objects
 1. Functions
+1. Enums
+1. Control instructions
+1. Borrowing (and checks)
+1. Imports and Exports
+1. Meta Programming
+1. FFI
+1. Caching
+
+## Goal - Self hosted language
+
+* Rewrite compiler and interpreter in chop.
+* Adjust and extend the language specs with findings on that way.

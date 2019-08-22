@@ -9,7 +9,7 @@ a := 3
 b := a + 5
 c := 7
 
-stdout max(b*c)
+stdout max(b,c)
 ```
 
-Should print `56`
+Should print `8`
