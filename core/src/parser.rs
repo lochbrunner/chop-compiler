@@ -128,7 +128,7 @@ fn create_statement(
             if node.root.token == TokenPayload::DefineLocal {
                 // TODO: First attempt only
                 // Get ident
-                let first_token = &node.args.iter().nth(0).unwrap().root.token;
+                let first_token = &node.args.get(0).unwrap().root.token;
                 if let TokenPayload::Ident(ref ident) = first_token {
                     context.declarations.insert(
                         ident.clone(),

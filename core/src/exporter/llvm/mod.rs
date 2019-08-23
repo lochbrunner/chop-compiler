@@ -1,5 +1,6 @@
 use crate::CompilerError;
 use std::collections::HashMap;
+use std::fmt;
 
 use crate::bytecode::ByteCode;
 
@@ -60,8 +61,10 @@ enum StackItem {
     Ref(usize),
 }
 
-fn store_i32(index: usize, value: i32, code: &mut String) {
-    code.push_str(&format!("  %{} = alloca i32, align 4\n", index));
+fn store_i32<T>(index: usize, value: T, code: &mut String)
+where
+    T: fmt::Display,
+{
     code.push_str(&format!(
         "  store i32 {}, i32* %{}, align 4\n",
         value, index
@@ -96,12 +99,29 @@ fn call_i32_function_i32_i32(
     stack: &mut Vec<StackItem>,
     code: &mut String,
 ) -> Result<(), CompilerError> {
-    let a = get_last_item_rep_i32(stack)?;
     let b = get_last_item_rep_i32(stack)?;
+    let a = get_last_item_rep_i32(stack)?;
     *register_counter += 1;
     code.push_str(&format!(
-        "  %{} = call i32 @{}(i32 {},i32 {})\n",
+        "  %{} = call i32 @{}(i32 {}, i32 {})\n",
         register_counter, function_name, a, b
+    ));
+    stack.push(StackItem::Ref(*register_counter));
+    Ok(())
+}
+
+fn int32_operator(
+    operator_name: &str,
+    register_counter: &mut usize,
+    stack: &mut Vec<StackItem>,
+    code: &mut String,
+) -> Result<(), CompilerError> {
+    *register_counter += 1;
+    let b = get_last_item_rep_i32(stack)?;
+    let a = get_last_item_rep_i32(stack)?;
+    code.push_str(&format!(
+        "  %{} = {} nsw i32 {}, {}\n",
+        operator_name, register_counter, a, b
     ));
     stack.push(StackItem::Ref(*register_counter));
     Ok(())
@@ -119,9 +139,13 @@ pub fn export(instructions: &[ByteCode], source_filename: &str) -> Result<String
     // The main function
     code.push_str("; Function Attrs: noinline nounwind optnone uwtable\n");
     code.push_str("define dso_local i32 @main() #0 {\n");
-    store_i32(1, 0, &mut code);
+    let mut register_counter = 0;
 
-    let mut register_counter = 1;
+    // Find all alloca
+    for _ in instructions.iter().filter(|s| **s == ByteCode::AllocaInt32) {
+        register_counter += 1;
+        code.push_str(&format!("  %{} = alloca i32, align 4\n", register_counter));
+    }
 
     let mut stack: Vec<StackItem> = Vec::new();
     for instruction in instructions.iter() {
@@ -134,12 +158,40 @@ pub fn export(instructions: &[ByteCode], source_filename: &str) -> Result<String
             ByteCode::Min => {
                 call_i32_function_i32_i32("min", &mut register_counter, &mut stack, &mut code)?;
             }
-            _ => {
-                return Err(CompilerError::global(&format!(
-                    "Unknown instruction {:?}",
-                    instruction
-                )))
+            ByteCode::StoreInt32(index) => {
+                let a = get_last_item_rep_i32(&mut stack)?;
+                store_i32(*index + 1, a, &mut code);
             }
+            ByteCode::AllocaInt32 => (),
+            ByteCode::LoadInt32(index) => {
+                register_counter += 1;
+                code.push_str(&format!(
+                    "  %{} = load i32, i32* %{}, align 4\n",
+                    register_counter,
+                    index + 1
+                ));
+                stack.push(StackItem::Ref(register_counter));
+            }
+            ByteCode::AddInt32 => {
+                int32_operator("add", &mut register_counter, &mut stack, &mut code)?
+            }
+            ByteCode::SubInt32 => {
+                int32_operator("sub", &mut register_counter, &mut stack, &mut code)?
+            }
+            ByteCode::MulInt32 => {
+                int32_operator("mul", &mut register_counter, &mut stack, &mut code)?
+            }
+            ByteCode::DivInt32 => {
+                int32_operator("sdiv", &mut register_counter, &mut stack, &mut code)?
+            }
+            ByteCode::RemInt32 => {
+                int32_operator("srem", &mut register_counter, &mut stack, &mut code)?
+            } // _ => {
+              //     return Err(CompilerError::global(&format!(
+              //         "Unknown instruction {:?}",
+              //         instruction
+              //     )))
+              // }
         }
     }
 

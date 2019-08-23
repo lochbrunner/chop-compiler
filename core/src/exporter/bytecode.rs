@@ -5,7 +5,7 @@ use crate::Context;
 use crate::Type;
 use std::collections::HashMap;
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone)]
 pub enum ByteCode {
     StdOut, // For now hard-coded
     Max,    // For now hard-coded
@@ -16,6 +16,7 @@ pub enum ByteCode {
     MulInt32,
     DivInt32,
     RemInt32,
+    AllocaInt32,
     StoreInt32(usize),
     LoadInt32(usize),
 }
@@ -71,7 +72,7 @@ fn unroll_node<'a>(
             check_types(
                 &format!("{:?}", node.root.token),
                 &node.root.begin,
-                &vec![Type::Int32, Type::Int32],
+                &[Type::Int32, Type::Int32],
                 &arg_types,
             )?;
             bytecode.push(match node.root.token {
@@ -127,7 +128,7 @@ fn unroll_node<'a>(
             let arg = unroll_node(
                 register_map,
                 context,
-                node.args.iter().nth(1).expect("Definition"),
+                node.args.get(1).expect("Definition"),
                 bytecode,
             )?;
             if arg != Type::Int32 {
@@ -136,33 +137,35 @@ fn unroll_node<'a>(
                     format!("Exporter Error: Can only define int32, but got {:?}", arg),
                 ));
             }
-            bytecode.push(ByteCode::StoreInt32(register_map.len()));
+            bytecode.push(ByteCode::AllocaInt32);
+            let index = register_map.len();
+            bytecode.push(ByteCode::StoreInt32(index));
             register_map.insert(
                 &node
                     .args
-                    .iter()
-                    .nth(0)
+                    .get(0)
                     .expect("Definition")
                     .root
                     .token
                     .get_ident()
                     .expect("ident"),
-                register_map.len(),
+                index,
             );
             Ok(Type::Void)
         }
-        _ => {
-            return Err(CompilerError {
-                location: node.root.begin.clone(),
-                msg: format!("Exporter Error: Unknown token {:?}", node.root.token),
-            })
-        }
+        _ => Err(CompilerError {
+            location: node.root.begin.clone(),
+            msg: format!("Exporter Error: Unknown token {:?}", node.root.token),
+        }),
     }
 }
 
 pub fn export(context: &Context, ast: Ast) -> Result<Vec<ByteCode>, CompilerError> {
     let mut bytecode = vec![];
-    let mut register_map: HashMap<&str, usize> = HashMap::new();
+    let mut register_map: HashMap<&str, usize> = hashmap! {"__init__"=> 1};
+    bytecode.push(ByteCode::AllocaInt32);
+    bytecode.push(ByteCode::PushInt32(0));
+    bytecode.push(ByteCode::StoreInt32(0));
     for statement in ast.statements.iter() {
         unroll_node(&mut register_map, context, statement, &mut bytecode)?;
     }
@@ -177,6 +180,8 @@ mod specs {
     use crate::Declaration;
     use ByteCode::*;
     use TokenPayload::*;
+
+    static HEADER: [ByteCode; 3] = [AllocaInt32, PushInt32(0), StoreInt32(0)];
 
     #[test]
     fn milestone_1() {
@@ -196,6 +201,7 @@ mod specs {
         assert!(actual.is_ok());
         let actual = actual.unwrap();
         let expected = vec![PushInt32(42), StdOut];
+        let expected = [&HEADER[..], &expected].concat();
 
         assert_eq!(actual, expected);
     }
@@ -223,6 +229,7 @@ mod specs {
         assert!(actual.is_ok());
         let actual = actual.unwrap();
         let expected = vec![PushInt32(3), PushInt32(5), AddInt32, StdOut];
+        let expected = [&HEADER[..], &expected].concat();
 
         assert_eq!(actual, expected);
     }
@@ -286,18 +293,22 @@ mod specs {
         let actual = actual.unwrap();
         let expected = vec![
             PushInt32(3),
-            StoreInt32(0),
-            LoadInt32(0),
+            AllocaInt32,
+            StoreInt32(1),
+            LoadInt32(1),
             PushInt32(5),
             AddInt32,
-            StoreInt32(1),
-            PushInt32(7),
+            AllocaInt32,
             StoreInt32(2),
-            LoadInt32(1),
+            PushInt32(7),
+            AllocaInt32,
+            StoreInt32(3),
             LoadInt32(2),
+            LoadInt32(3),
             Max,
             StdOut,
         ];
+        let expected = [&HEADER[..], &expected].concat();
         assert_eq!(actual, expected);
     }
 }

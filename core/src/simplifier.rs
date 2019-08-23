@@ -4,12 +4,12 @@ use crate::CompilerError;
 
 type Node = crate::ast::Node<Token>;
 
-fn get2_int32(args: &Vec<Node>) -> Option<(i32, i32)> {
+fn get2_int32(args: &[Node]) -> Option<(i32, i32)> {
     if args.len() != 2 {
         None
     } else {
-        let a = &args.iter().nth(0).unwrap().root.token;
-        let b = &args.iter().nth(1).unwrap().root.token;
+        let a = &args.get(0).unwrap().root.token;
+        let b = &args.get(1).unwrap().root.token;
         match a {
             TokenPayload::Int32(va) => match b {
                 TokenPayload::Int32(vb) => Some((*va, *vb)),
@@ -30,13 +30,15 @@ fn simplify_node(node: Node) -> Result<Node, CompilerError> {
         .map(simplify_node)
         .collect::<Result<Vec<_>, CompilerError>>()?;
 
-    if args.iter().any(|arg| {
+    let is_int32 = args.iter().any(|arg| {
         if let TokenPayload::Int32(_) = arg.root.token {
             false
         } else {
             true
         }
-    }) {
+    });
+
+    if is_int32 {
         return Ok(Node {
             root: Token { token, begin, end },
             args,

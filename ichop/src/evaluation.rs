@@ -12,13 +12,22 @@ fn pop_as_int32(stack: &mut Vec<StackItem>) -> Result<i32, String> {
         Some(stack_item) => match stack_item {
             StackItem::Int32(v) => Ok(v),
         },
-        None => return Err("Not enough elements on stack.".to_string()),
+        None => Err("Not enough elements on stack.".to_string()),
     }
 }
 
 pub fn evaluate(code: &[ByteCode], writer: &mut dyn Write) -> Result<(), String> {
     let mut stack: Vec<StackItem> = Vec::new();
-    let mut register: Vec<i32> = Vec::new();
+
+    let register_size = code
+        .iter()
+        .filter(|s| **s == ByteCode::AllocaInt32)
+        .fold(0, |acc, _| acc + 1);
+    let mut register: Vec<i32> = Vec::with_capacity(register_size);
+    for _ in 0..register_size {
+        register.push(0);
+    }
+
     for instruction in code.iter() {
         match instruction {
             // Build ins
@@ -64,9 +73,9 @@ pub fn evaluate(code: &[ByteCode], writer: &mut dyn Write) -> Result<(), String>
                 let a = pop_as_int32(&mut stack)?;
                 stack.push(StackItem::Int32(a % b))
             }
-            ByteCode::StoreInt32(_) => {
+            ByteCode::StoreInt32(index) => {
                 let a = pop_as_int32(&mut stack)?;
-                register.push(a);
+                register[*index] = a;
             }
             ByteCode::LoadInt32(index) => {
                 if register.len() - 1 < *index {
@@ -75,6 +84,7 @@ pub fn evaluate(code: &[ByteCode], writer: &mut dyn Write) -> Result<(), String>
                 let value = register[*index];
                 stack.push(StackItem::Int32(value));
             }
+            ByteCode::AllocaInt32 => (),
         }
     }
     Ok(())

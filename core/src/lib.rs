@@ -120,6 +120,8 @@ mod e2e {
     use super::*;
     use ByteCode::*;
 
+    static HEADER: [ByteCode; 3] = [AllocaInt32, PushInt32(0), StoreInt32(0)];
+
     #[test]
     fn milestone_1() {
         let actual = compile(
@@ -129,8 +131,8 @@ mod e2e {
         );
         assert!(actual.is_ok());
         let actual = actual.unwrap();
-
         let expected = vec![PushInt32(42), StdOut];
+        let expected = [&HEADER[..], &expected].concat();
 
         assert_eq!(actual, expected);
     }
@@ -148,6 +150,7 @@ mod e2e {
         let actual = actual.unwrap();
 
         let expected = vec![PushInt32(42), StdOut, PushInt32(35), StdOut];
+        let expected = [&HEADER[..], &expected].concat();
 
         assert_eq!(actual, expected);
     }
@@ -172,6 +175,7 @@ mod e2e {
             PushInt32(28),
             StdOut,
         ];
+        let expected = [&HEADER[..], &expected].concat();
 
         assert_eq!(actual, expected);
     }
@@ -187,6 +191,7 @@ mod e2e {
         assert!(actual.is_ok());
         let actual = actual.unwrap();
         let expected = vec![PushInt32(3), PushInt32(5), Max, StdOut];
+        let expected = [&HEADER[..], &expected].concat();
 
         assert_eq!(actual, expected);
     }

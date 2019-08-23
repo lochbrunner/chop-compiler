@@ -43,7 +43,7 @@ cchop <code filename> -o <output filename>
 1. [Interpret MVP](./milestones/1) :heavy_check_mark:
 1. [Compile MVP via LLVM](./milestones/2) :heavy_check_mark:
 1. [Mathematical operations and build-in functions](./milestones/3) :heavy_check_mark:
-1. [Variables](./milestones/4)
+1. [Variables](./milestones/4) :heavy_check_mark:
 1. Primitive Types
 1. Objects
 1. Functions
