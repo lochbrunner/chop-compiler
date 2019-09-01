@@ -1,9 +1,7 @@
-use crate::CompilerError;
-use crate::Type;
 use std::collections::HashMap;
 use std::fmt;
 
-use crate::bytecode::ByteCode;
+use core::{ByteCode, CompilerError, Type};
 
 mod buildins;
 
@@ -65,13 +63,16 @@ enum StackItem {
     Ref(usize),
 }
 
-fn store_i32<T>(index: usize, value: T, code: &mut String)
+fn store<T>(index: usize, value: T, v_type: &Type, code: &mut String)
 where
     T: fmt::Display,
 {
     code.push_str(&format!(
-        "  store i32 {}, i32* %{}, align 4\n",
-        value, index
+        "  store {} {}, {}* %{}, align 4\n",
+        v_type.to_llvm(),
+        value,
+        v_type.to_llvm(),
+        index
     ));
 }
 
@@ -114,8 +115,12 @@ fn call_stdout(
     Ok(())
 }
 
-impl Type {
-    pub fn to_llvm(&self) -> &'static str {
+trait ToLLVM {
+    fn to_llvm(&self) -> &'static str;
+}
+
+impl ToLLVM for Type {
+    fn to_llvm(&self) -> &'static str {
         match self {
             Type::Int8 => "i8",
             Type::Int16 => "i16",
@@ -164,7 +169,31 @@ fn operator(
     let a = get_last_item_rep_gen(stack)?;
     code.push_str(&format!(
         "  %{} = {} nsw {} {}, {}\n",
-        operator_name, register_counter, op_type.to_llvm(), a, b
+        operator_name,
+        register_counter,
+        op_type.to_llvm(),
+        a,
+        b
+    ));
+    stack.push(StackItem::Ref(*register_counter));
+    Ok(())
+}
+
+fn cast(
+    from: &Type,
+    to: &Type,
+    register_counter: &mut usize,
+    stack: &mut Vec<StackItem>,
+    code: &mut String,
+) -> Result<(), CompilerError> {
+    *register_counter += 1;
+    let value = get_last_item_rep_gen(stack)?;
+    code.push_str(&format!(
+        "  %{} = sext {} {} to {}\n",
+        register_counter,
+        from.to_llvm(),
+        value,
+        to.to_llvm(),
     ));
     stack.push(StackItem::Ref(*register_counter));
     Ok(())
@@ -209,16 +238,17 @@ pub fn export(instructions: &[ByteCode], source_filename: &str) -> Result<String
                     &mut code,
                 )?;
             }
-            ByteCode::Store(Type::Int32, index) => {
+            ByteCode::Store(op_type, index) => {
                 let a = get_last_item_rep_i32(&mut stack)?;
-                store_i32(*index + 1, a, &mut code);
+                store(*index + 1, a, op_type, &mut code);
             }
             ByteCode::Alloca(_) => (),
-            ByteCode::Load(Type::Int32, index) => {
+            ByteCode::Load(op_type, index) => {
                 register_counter += 1;
                 code.push_str(&format!(
-                    "  %{} = load i32, i32* %{}, align 4\n",
+                    "  %{0} = load {1}, {1}* %{2}, align 4\n",
                     register_counter,
+                    op_type.to_llvm(),
                     index + 1
                 ));
                 stack.push(StackItem::Ref(register_counter));
@@ -232,11 +262,22 @@ pub fn export(instructions: &[ByteCode], source_filename: &str) -> Result<String
             ByteCode::Mul(op_type) => {
                 operator("mul", op_type, &mut register_counter, &mut stack, &mut code)?
             }
-            ByteCode::Div(op_type) => {
-                operator("sdiv", op_type, &mut register_counter, &mut stack, &mut code)?
-            }
-            ByteCode::Rem(op_type) => {
-                operator("srem", op_type, &mut register_counter, &mut stack, &mut code)?
+            ByteCode::Div(op_type) => operator(
+                "sdiv",
+                op_type,
+                &mut register_counter,
+                &mut stack,
+                &mut code,
+            )?,
+            ByteCode::Rem(op_type) => operator(
+                "srem",
+                op_type,
+                &mut register_counter,
+                &mut stack,
+                &mut code,
+            )?,
+            ByteCode::CastInt(from, to) => {
+                cast(from, to, &mut register_counter, &mut stack, &mut code)?;
             }
             _ => {
                 return Err(CompilerError::global(&format!(

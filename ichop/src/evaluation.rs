@@ -8,18 +8,8 @@ enum StackItem {
     Int32(i32),
     Int16(i16),
     Int8(i8),
+    Float(i64),
 }
-
-// impl StackItem {
-//     pub fn get_type(&self) -> Type {
-//         match self {
-//             StackItem::Int8(_) => Type::Int8,
-//             StackItem::Int16(_) => Type::Int16,
-//             StackItem::Int32(_) => Type::Int32,
-//             StackItem::Int64(_) => Type::Int64,
-//         }
-//     }
-// }
 
 fn pop_generic(stack: &mut Vec<StackItem>) -> Result<StackItem, String> {
     match stack.pop() {
@@ -27,18 +17,6 @@ fn pop_generic(stack: &mut Vec<StackItem>) -> Result<StackItem, String> {
         None => Err("Not enough elements on stack.".to_string()),
     }
 }
-
-// fn pop_generic_and_check(
-//     stack: &mut Vec<StackItem>,
-//     expected_type: &Type,
-// ) -> Result<StackItem, String> {
-//     let v = pop_generic(stack)?;
-//     if v.get_type() == *expected_type {
-//         Ok(v)
-//     } else {
-//         Err(format!("Expected type {:?} but got {:?}", expected_type, v))
-//     }
-// }
 
 fn pop_as_int8(stack: &mut Vec<StackItem>) -> Result<i8, String> {
     let stack_item = pop_generic(stack)?;
@@ -104,15 +82,14 @@ pub fn evaluate(code: &[ByteCode], writer: &mut dyn Write) -> Result<(), String>
 
     let mut register: Vec<StackItem> = Vec::new();
     for alloca in code.iter() {
-        match alloca {
-            ByteCode::Alloca(t) => match t {
+        if let ByteCode::Alloca(t) = alloca {
+            match t {
                 Type::Int64 => register.push(StackItem::Int64(0)),
                 Type::Int32 => register.push(StackItem::Int32(0)),
                 Type::Int16 => register.push(StackItem::Int16(0)),
                 Type::Int8 => register.push(StackItem::Int8(0)),
                 Type::Void => (),
-            },
-            _ => (),
+            }
         }
     }
 
@@ -126,6 +103,7 @@ pub fn evaluate(code: &[ByteCode], writer: &mut dyn Write) -> Result<(), String>
                     StackItem::Int16(v) => v.to_string(),
                     StackItem::Int32(v) => v.to_string(),
                     StackItem::Int64(v) => v.to_string(),
+                    _ => return Err(format!("Type {:?} is not implemented yet!", v))
                 };
                 if let Err(error) = writeln!(writer, "{}", s) {
                     return Err(format!("Error writing to stdout: {}", error));
@@ -257,10 +235,10 @@ pub fn evaluate(code: &[ByteCode], writer: &mut dyn Write) -> Result<(), String>
                 Type::Int8 => {
                     let v = pop_as_int8(&mut stack)?;
                     match to {
-                        Type::Int8 => stack.push(StackItem::Int8(v as i8)),
-                        Type::Int16 => stack.push(StackItem::Int16(v as i16)),
-                        Type::Int32 => stack.push(StackItem::Int32(v as i32)),
-                        Type::Int64 => stack.push(StackItem::Int64(v as i64)),
+                        Type::Int8 => stack.push(StackItem::Int8(v)),
+                        Type::Int16 => stack.push(StackItem::Int16(i16::from(v))),
+                        Type::Int32 => stack.push(StackItem::Int32(i32::from(v))),
+                        Type::Int64 => stack.push(StackItem::Int64(i64::from(v))),
                         _ => {
                             return Err(format!(
                                 "Casting from {:?} to {:?} is not implemented yet!",
@@ -273,9 +251,9 @@ pub fn evaluate(code: &[ByteCode], writer: &mut dyn Write) -> Result<(), String>
                     let v = pop_as_int16(&mut stack)?;
                     match to {
                         Type::Int8 => stack.push(StackItem::Int8(v as i8)),
-                        Type::Int16 => stack.push(StackItem::Int16(v as i16)),
-                        Type::Int32 => stack.push(StackItem::Int32(v as i32)),
-                        Type::Int64 => stack.push(StackItem::Int64(v as i64)),
+                        Type::Int16 => stack.push(StackItem::Int16(v)),
+                        Type::Int32 => stack.push(StackItem::Int32(i32::from(v))),
+                        Type::Int64 => stack.push(StackItem::Int64(i64::from(v))),
                         _ => {
                             return Err(format!(
                                 "Casting from {:?} to {:?} is not implemented yet!",
@@ -290,7 +268,7 @@ pub fn evaluate(code: &[ByteCode], writer: &mut dyn Write) -> Result<(), String>
                         Type::Int8 => stack.push(StackItem::Int8(v as i8)),
                         Type::Int16 => stack.push(StackItem::Int16(v as i16)),
                         Type::Int32 => stack.push(StackItem::Int32(v)),
-                        Type::Int64 => stack.push(StackItem::Int64(v as i64)),
+                        Type::Int64 => stack.push(StackItem::Int64(i64::from(v))),
                         _ => {
                             return Err(format!(
                                 "Casting from {:?} to {:?} is not implemented yet!",
@@ -305,7 +283,7 @@ pub fn evaluate(code: &[ByteCode], writer: &mut dyn Write) -> Result<(), String>
                         Type::Int8 => stack.push(StackItem::Int8(v as i8)),
                         Type::Int16 => stack.push(StackItem::Int16(v as i16)),
                         Type::Int32 => stack.push(StackItem::Int32(v as i32)),
-                        Type::Int64 => stack.push(StackItem::Int64(v as i64)),
+                        Type::Int64 => stack.push(StackItem::Int64(v)),
                         _ => {
                             return Err(format!(
                                 "Casting from {:?} to {:?} is not implemented yet!",

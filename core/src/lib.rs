@@ -3,15 +3,14 @@ use std::cmp::PartialEq;
 use std::collections::HashMap;
 use std::fmt;
 pub mod ast;
-mod exporter;
+pub mod bytecode;
 mod generator;
 mod lexer;
 mod parser;
 mod simplifier;
 pub mod token;
-pub use exporter::{bytecode, llvm};
 
-use crate::exporter::bytecode::ByteCode;
+pub use bytecode::ByteCode;
 
 #[macro_use]
 extern crate maplit;
@@ -40,6 +39,7 @@ impl Type {
     }
 }
 
+#[derive(PartialEq, Clone)]
 pub struct Signature<T> {
     return_type: T,
     args: Vec<T>,
@@ -53,55 +53,59 @@ where
     }
 }
 
+type LazySignature = fn(
+    &Signature<Option<Type>>,
+    partial: &Signature<Option<Type>>,
+) -> Result<Signature<Type>, String>;
+
 pub struct Declaration {
-    // Later will be vector
-    // pre: Vec<Type>,
-    #[deprecated(note = "Use signature instead")]
-    post: Vec<Type>,
-    #[deprecated(note = "Use signature instead")]
-    return_type: Type,
-    // signature: Signature<Option<Type>>,
-    deduce_complete:
-        fn(&Declaration, partial: Signature<Option<Type>>) -> Result<Signature<Type>, String>,
-    #[deprecated(note = "This is equal with return type being Void")]
+    signature: Signature<Option<Type>>,
+    deduce_complete: LazySignature,
+    // #[deprecated(note = "This is equal with return type being Void")]
     is_statement: bool,
 }
 
 impl fmt::Debug for Declaration {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{:?}({:?})", self.return_type, self.post)
+        write!(f, "{:?}", self.signature)
     }
 }
 
 #[cfg(test)]
 impl PartialEq for Declaration {
     fn eq(&self, other: &Self) -> bool {
-        self.is_statement == other.is_statement
-            && self.post == other.post
-            && self.return_type == other.return_type
+        self.signature == other.signature
     }
 }
 
 impl Declaration {
-    fn check(partial: &Option<Type>, full: &Type) -> Result<(), String> {
-        if let Some(return_type) = partial {
-            if return_type != full {
-                return Err(format!(
-                    "Type {:?} and {:?} do not match",
-                    return_type, full
-                ));
+    fn merge(a: &Option<Type>, b: &Option<Type>) -> Result<Type, String> {
+        if let Some(a_type) = a {
+            if let Some(b_type) = b {
+                if b_type != a_type {
+                    Err(format!("Type {:?} and {:?} do not match", a_type, b_type))
+                } else {
+                    Ok(a_type.clone())
+                }
+            } else {
+                Ok(a_type.clone())
             }
+        } else if let Some(b_type) = b {
+            Ok(b_type.clone())
+        } else {
+            Err("None of the signatures has any type".to_string())
         }
-        Ok(())
     }
 
     /// Ignores all types are the same
     /// TODO: Check for number of arguments
     pub fn full_template_statement(num_args: usize) -> Declaration {
         Declaration {
-            return_type: Type::Int32,
-            post: vec![Type::Int32; num_args],
             is_statement: true,
+            signature: Signature {
+                return_type: Some(Type::Void),
+                args: vec![None; num_args],
+            },
             deduce_complete: |_, partial| {
                 fn get_type(args: &[Option<Type>]) -> Option<Type> {
                     for arg in args.iter() {
@@ -129,9 +133,11 @@ impl Declaration {
     /// TODO: Check for number of arguments
     pub fn full_template_function(num_args: usize) -> Declaration {
         Declaration {
-            return_type: Type::Int32,
-            post: vec![Type::Int32; num_args],
             is_statement: false,
+            signature: Signature {
+                return_type: None,
+                args: vec![None; num_args],
+            },
             deduce_complete: |_, partial| {
                 fn get_type(args: &[Option<Type>]) -> Option<Type> {
                     for arg in args.iter() {
@@ -142,19 +148,18 @@ impl Declaration {
                     None
                 }
                 // Get at least one type
-                let tp = if let Some(tp) = partial.return_type {
+                let Signature { return_type, args } = partial;
+                let tp = if let Some(tp) = return_type {
+                    tp.clone()
+                } else if let Some(tp) = get_type(&args) {
                     tp
                 } else {
-                    if let Some(tp) = get_type(&partial.args) {
-                        tp
-                    } else {
-                        return Err(format!("No types found in {:?}", partial));
-                    }
+                    return Err(format!("No types found in {:?}({:?})", return_type, args));
                 };
                 let args_count = partial.args.len();
                 Ok(Signature {
                     return_type: tp.clone(),
-                    args: vec![tp.clone(); args_count],
+                    args: vec![tp; args_count],
                 })
             },
         }
@@ -162,45 +167,52 @@ impl Declaration {
     /// Use this if all types are constant.
     pub fn function(return_type: Type, args: Vec<Type>, is_statement: bool) -> Declaration {
         Declaration {
-            return_type,
-            // pre: Vec::new(),
-            post: args,
             is_statement,
+            signature: Signature {
+                return_type: Some(return_type),
+                args: args.iter().cloned().map(Some).collect(),
+            },
             deduce_complete: |decl, partial| {
-                Declaration::check(&partial.return_type, &decl.return_type)?;
-                if partial.args.len() != decl.post.len() {
+                let return_type = Declaration::merge(&partial.return_type, &decl.return_type)?;
+                if partial.args.len() != decl.args.len() {
                     return Err(format!(
                         "Expected {} arguments but got {}",
-                        decl.post.len(),
+                        decl.args.len(),
                         partial.args.len()
                     ));
                 }
-                // Check arg types
-                for (decl_arg, partial_arg) in decl.post.iter().zip(partial.args.iter()) {
-                    Declaration::check(partial_arg, decl_arg)?;
-                }
-                Ok(Signature {
-                    return_type: decl.return_type.clone(),
-                    args: decl.post.clone(),
-                })
+
+                let args = decl
+                    .args
+                    .iter()
+                    .zip(partial.args.iter())
+                    .map(|(d, p)| Declaration::merge(&d, &p))
+                    .collect::<Result<Vec<_>, _>>()?;
+
+                Ok(Signature { return_type, args })
             },
         }
     }
     /// Use this if all types are constant.
     pub fn variable(return_type: Type) -> Declaration {
         Declaration {
-            return_type,
-            // pre: Vec::new(),
-            post: vec![],
             is_statement: false,
+            signature: Signature {
+                return_type: Some(return_type),
+                args: vec![],
+            },
             deduce_complete: |decl, partial| {
-                Declaration::check(&partial.return_type, &decl.return_type)?;
+                let return_type = Declaration::merge(&partial.return_type, &decl.return_type)?;
                 Ok(Signature {
-                    return_type: decl.return_type.clone(),
+                    return_type,
                     args: vec![],
                 })
             },
         }
+    }
+
+    pub fn req_args_count(&self) -> usize {
+        self.signature.args.len()
     }
 }
 
@@ -269,7 +281,7 @@ pub fn compile(code: &str) -> Result<Vec<ByteCode>, CompilerError> {
     let raw_ast = parser::parse(&mut context, &tokens)?;
     let ast = generator::generate(raw_ast)?;
     let simple = simplifier::simplify(ast)?;
-    exporter::bytecode::export(&context, simple)
+    bytecode::export(&context, simple)
 }
 
 #[cfg(test)]

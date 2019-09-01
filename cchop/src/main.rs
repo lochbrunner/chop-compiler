@@ -1,9 +1,12 @@
 extern crate clap;
 extern crate core;
 mod link;
+mod llvm;
+
+#[macro_use]
+extern crate maplit;
 
 use clap::{App, Arg};
-use core::llvm;
 use std::fs;
 use std::path::Path;
 

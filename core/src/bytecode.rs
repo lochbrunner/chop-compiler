@@ -50,7 +50,7 @@ fn get_common_type_2(
         Err(CompilerError {
             location: location.clone(),
             msg: format!(
-                "Exporter Error: Arguments of operator/function {} expected are different. {:?} and {:?}",
+                "Exporter Error: Arguments of operator/function \"{}\" expected are different. {:?} and {:?}",
                 name,
                 args.get(0).unwrap(), args.get(1).unwrap()
             ),
@@ -100,10 +100,32 @@ fn unroll_node<'a>(
         }
         TokenPayload::Ident(ref ident) => {
             let declaration = context.get_declaration(ident, node.root.begin.clone())?;
-            // Function or variable? (Function used as argument is a variable here ;) )
-            if declaration.post.is_empty() {
+            let arg_types = node
+                .args
+                .iter()
+                .map(unroll_node)
+                .collect::<Result<Vec<_>, CompilerError>>()?;
+            let signature = match (declaration.deduce_complete)(
+                &declaration.signature,
+                &Signature {
+                    return_type: None,
+                    args: arg_types.iter().cloned().map(Some).collect::<Vec<_>>(),
+                },
+            ) {
+                Ok(signature) => signature,
+                Err(msg) => {
+                    return Err(CompilerError::from_token(
+                        &node.root,
+                        format!(
+                            "Signature of variable/function \"{}\" could not be resolved: {}",
+                            ident, msg
+                        ),
+                    ))
+                }
+            };
+            if declaration.req_args_count() == 0 {
                 if let Some(index) = register_map.get::<str>(ident) {
-                    bytecode.push(ByteCode::Load(declaration.return_type.clone(), *index));
+                    bytecode.push(ByteCode::Load(signature.return_type.clone(), *index));
                 } else {
                     return Err(CompilerError::from_token(
                         &node.root,
@@ -111,31 +133,7 @@ fn unroll_node<'a>(
                     ));
                 }
             } else {
-                let arg_types = node
-                    .args
-                    .iter()
-                    .map(unroll_node)
-                    .collect::<Result<Vec<_>, CompilerError>>()?;
-                let signature = (declaration.deduce_complete)(
-                    &declaration,
-                    Signature {
-                        return_type: None,
-                        args: arg_types
-                            .iter()
-                            .cloned()
-                            .map(|t| Some(t))
-                            .collect::<Vec<_>>(),
-                    },
-                );
-                let Signature { return_type, args } = match signature {
-                    Ok(signature) => signature,
-                    Err(msg) => {
-                        return Err(CompilerError::from_token(
-                            &node.root,
-                            format!("Signature of \"{}\" could not be resolved: {}", ident, msg),
-                        ))
-                    }
-                };
+                let Signature { return_type, args } = signature.clone();
                 // Get build-in functions
                 match get_build_ins(&ident) {
                     Some(instruction) => bytecode.push(instruction),
@@ -143,19 +141,19 @@ fn unroll_node<'a>(
                         if arg_types.len() != 2 {
                             return Err(CompilerError::from_token(
                                 &node.root,
-                                format!("No Function {} expects {} arguments, but only 2 arguments are supported yet.", ident, declaration.post.len()),
+                                format!("No Function {} expects {} arguments, but only 2 arguments are supported yet.", ident, declaration.req_args_count()),
                             ));
                         }
                         bytecode.push(ByteCode::Call2(
                             ident.clone(),
-                            return_type,
+                            return_type.clone(),
                             args.get(0).unwrap().clone(),
                             args.get(1).unwrap().clone(),
                         ));
                     }
                 }
             }
-            Ok(declaration.return_type.clone())
+            Ok(signature.return_type)
         }
         TokenPayload::DefineLocal => {
             // Compile argument

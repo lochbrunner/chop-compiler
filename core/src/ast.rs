@@ -1,4 +1,4 @@
-use crate::token::{Location, Token};
+use crate::token::{Token};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Node<T> {

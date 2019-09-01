@@ -1,7 +1,7 @@
 use crate::ast;
 use crate::token::{Token, TokenPayload};
 use crate::CompilerError;
-use crate::{Context, Declaration, Signature, Type};
+use crate::{Context, Declaration, Type};
 
 #[derive(PartialEq, PartialOrd, Debug, Clone)]
 pub enum Precedence {
@@ -129,15 +129,6 @@ fn astify(_context: &Context, till: Precedence, stack: &mut ParseStack) -> Resul
         ));
     }
 
-    // println!(
-    //     "\ninfix: {:#?}",
-    //     stack
-    //         .infix
-    //         .iter()
-    //         .map(|i| i.token.token.clone())
-    //         .collect::<Vec<_>>()
-    // );
-    // println!("symbols: {:#?}", stack.symbol);
     Ok(())
 }
 
@@ -284,18 +275,17 @@ pub fn parse(context: &mut Context, tokens: &[Token]) -> Result<ast::Ast, Compil
                                 }
                             } else {
                                 // New declaration?
-                                // current_definition_ident = Some(&token);
                                 stack.symbol.push((Symbol::Raw(token.clone()), true));
                             }
                         }
                         Some(declaration) => {
-                            if declaration.post.is_empty() {
+                            if declaration.req_args_count() == 0 {
                                 stack.symbol.push((Symbol::Raw(token.clone()), true));
                             } else {
                                 stack.infix.push(Infix {
                                     token: token.clone(),
                                     precedence: Precedence::PCall,
-                                    req_args_count: declaration.post.len(),
+                                    req_args_count: declaration.req_args_count(),
                                     is_statement: declaration.is_statement,
                                     optional_type: false,
                                 });

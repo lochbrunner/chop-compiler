@@ -1,4 +1,19 @@
+sudo: required
 language: rust
+addons:
+  apt:
+    packages:
+      - libcurl4-openssl-dev
+      - libelf-dev
+      - libdw-dev
+      - binutils-dev
+      - libiberty-dev
+      - cmake
+      - musl
+      - musl-dev
+      - musl-tools
+    sources:
+      - kalakris-cmake
 matrix:
   include:
     # Stable channel.
@@ -7,9 +22,6 @@ matrix:
       env: TARGET=x86_64-unknown-linux-gnu
 jobs:
   include:
-    - stage: Build
-      script: 
-        - cargo build --verbose --all
     - stage: Lint
       before_script: 
         - rustup component add clippy
@@ -17,20 +29,22 @@ jobs:
         - cargo clippy --verbose --all
     - stage: Tests
       name: Unit Tests
+      # See https://github.com/roblabla/cargo-travis
+      before_script:
+        - export PATH=$HOME/.cargo/bin:$PATH
+        - cargo install cargo-update || echo "cargo-update already installed"
+        - cargo install cargo-travis || echo "cargo-travis already installed"
+        - cargo install-update -a # update outdated cached binaries
       script: 
         - cargo test --verbose --all
+      after_success:
+        - cargo coveralls
     - name: End to End Tests
       before_script: 
         - cargo install --path ichop --force
         - cargo install --path cchop --force
       script:
         - ./milestones/test.sh
-    - name: Coverage
-      # See https://github.com/roblabla/cargo-travis
-      before_script:
-        - cargo install cargo-travis
-      script:
-        - cargo coveralls
 cache:
   directories:
     - /home/travis/.cargo
