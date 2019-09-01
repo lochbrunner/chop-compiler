@@ -2,53 +2,61 @@ use crate::ast::{Ast, Node};
 use crate::token::{Location, Token, TokenPayload};
 use crate::CompilerError;
 use crate::Context;
+use crate::Signature;
 use crate::Type;
 use std::collections::HashMap;
 
 #[derive(PartialEq, Debug, Clone)]
 pub enum ByteCode {
     StdOut, // For now hard-coded
-    Max,    // For now hard-coded
-    Min,    // For now hard-coded
+    Call2(String, Type, Type, Type),
+    PushInt8(i8),
+    PushInt16(i16),
     PushInt32(i32),
-    AddInt32,
-    SubInt32,
-    MulInt32,
-    DivInt32,
-    RemInt32,
-    AllocaInt32,
-    StoreInt32(usize),
-    LoadInt32(usize),
+    PushInt64(i64),
+    Add(Type),
+    Sub(Type),
+    Mul(Type),
+    Div(Type),
+    Rem(Type),
+    Alloca(Type),
+    CastInt(Type, Type), // (From, To) See https://llvm.org/docs/LangRef.html#sext-to-instruction
+    Store(Type, usize),
+    Load(Type, usize),
 }
 
-fn get_build_ins(ident: &str, location: &Location) -> Result<ByteCode, CompilerError> {
+fn get_build_ins(ident: &str) -> Option<ByteCode> {
     match ident {
-        "stdout" => Ok(ByteCode::StdOut),
-        "min" => Ok(ByteCode::Min),
-        "max" => Ok(ByteCode::Max),
-        _ => Err(CompilerError {
-            location: location.clone(),
-            msg: format!("No build-in function \"{}\" was defined.", ident),
-        }),
+        "stdout" => Some(ByteCode::StdOut),
+        _ => None,
     }
 }
 
-fn check_types(
+fn get_common_type_2(
     name: &str,
     location: &Location,
-    expected: &[Type],
-    actual: &[Type],
-) -> Result<(), CompilerError> {
-    if expected != actual {
+    args: &[Type],
+) -> Result<Type, CompilerError> {
+    if args.len() != 2 {
         Err(CompilerError {
             location: location.clone(),
             msg: format!(
-                "Exporter Error: Operator/function {} arguments of type {:?} but got {:?}",
-                name, expected, actual
+                "Exporter Error: Operator/function {} expected 2 arguments but got {}",
+                name,
+                args.len()
+            ),
+        })
+    } else if args.get(0).unwrap() != args.get(1).unwrap() {
+        Err(CompilerError {
+            location: location.clone(),
+            msg: format!(
+                "Exporter Error: Arguments of operator/function {} expected are different. {:?} and {:?}",
+                name,
+                args.get(0).unwrap(), args.get(1).unwrap()
             ),
         })
     } else {
-        Ok(())
+        Ok(args.get(0).unwrap().clone())
     }
 }
 
@@ -58,6 +66,7 @@ fn unroll_node<'a>(
     node: &'a Node<Token>,
     bytecode: &mut Vec<ByteCode>,
 ) -> Result<Type, CompilerError> {
+    let mut unroll_node = |node| unroll_node(register_map, context, node, bytecode);
     match node.root.token {
         TokenPayload::Add
         | TokenPayload::Subtract
@@ -67,23 +76,23 @@ fn unroll_node<'a>(
             let arg_types = node
                 .args
                 .iter()
-                .map(|arg| unroll_node(register_map, context, arg, bytecode))
+                .map(unroll_node)
                 .collect::<Result<Vec<_>, CompilerError>>()?;
-            check_types(
+            let needed_type = get_common_type_2(
                 &format!("{:?}", node.root.token),
                 &node.root.begin,
-                &[Type::Int32, Type::Int32],
                 &arg_types,
             )?;
+            let return_type = needed_type.clone();
             bytecode.push(match node.root.token {
-                TokenPayload::Add => ByteCode::AddInt32,
-                TokenPayload::Subtract => ByteCode::SubInt32,
-                TokenPayload::Multiply => ByteCode::MulInt32,
-                TokenPayload::Divide => ByteCode::DivInt32,
-                TokenPayload::Remainder => ByteCode::RemInt32,
-                _ => ByteCode::AddInt32,
+                TokenPayload::Add => ByteCode::Add(needed_type),
+                TokenPayload::Subtract => ByteCode::Sub(needed_type),
+                TokenPayload::Multiply => ByteCode::Mul(needed_type),
+                TokenPayload::Divide => ByteCode::Div(needed_type),
+                TokenPayload::Remainder => ByteCode::Rem(needed_type),
+                _ => ByteCode::Add(needed_type),
             });
-            Ok(Type::Int32)
+            Ok(return_type)
         }
         TokenPayload::Int32(v) => {
             bytecode.push(ByteCode::PushInt32(v));
@@ -94,7 +103,7 @@ fn unroll_node<'a>(
             // Function or variable? (Function used as argument is a variable here ;) )
             if declaration.post.is_empty() {
                 if let Some(index) = register_map.get::<str>(ident) {
-                    bytecode.push(ByteCode::LoadInt32(*index));
+                    bytecode.push(ByteCode::Load(declaration.return_type.clone(), *index));
                 } else {
                     return Err(CompilerError::from_token(
                         &node.root,
@@ -105,18 +114,53 @@ fn unroll_node<'a>(
                 let arg_types = node
                     .args
                     .iter()
-                    .map(|arg| unroll_node(register_map, context, arg, bytecode))
+                    .map(unroll_node)
                     .collect::<Result<Vec<_>, CompilerError>>()?;
-                check_types(ident, &node.root.begin, &declaration.post, &arg_types)?;
+                let signature = (declaration.deduce_complete)(
+                    &declaration,
+                    Signature {
+                        return_type: None,
+                        args: arg_types
+                            .iter()
+                            .cloned()
+                            .map(|t| Some(t))
+                            .collect::<Vec<_>>(),
+                    },
+                );
+                let Signature { return_type, args } = match signature {
+                    Ok(signature) => signature,
+                    Err(msg) => {
+                        return Err(CompilerError::from_token(
+                            &node.root,
+                            format!("Signature of \"{}\" could not be resolved: {}", ident, msg),
+                        ))
+                    }
+                };
                 // Get build-in functions
-                let instruction = get_build_ins(&ident, &node.root.begin)?;
-                bytecode.push(instruction);
+                match get_build_ins(&ident) {
+                    Some(instruction) => bytecode.push(instruction),
+                    None => {
+                        if arg_types.len() != 2 {
+                            return Err(CompilerError::from_token(
+                                &node.root,
+                                format!("No Function {} expects {} arguments, but only 2 arguments are supported yet.", ident, declaration.post.len()),
+                            ));
+                        }
+                        bytecode.push(ByteCode::Call2(
+                            ident.clone(),
+                            return_type,
+                            args.get(0).unwrap().clone(),
+                            args.get(1).unwrap().clone(),
+                        ));
+                    }
+                }
             }
             Ok(declaration.return_type.clone())
         }
         TokenPayload::DefineLocal => {
             // Compile argument
-            if node.args.len() != 2 {
+            if node.args.len() != 2 && node.args.len() != 3 {
+                // TODO: Handle Type declaration
                 return Err(CompilerError::from_token(
                     &node.root,
                     format!(
@@ -125,21 +169,21 @@ fn unroll_node<'a>(
                     ),
                 ));
             }
-            let arg = unroll_node(
-                register_map,
-                context,
-                node.args.get(1).expect("Definition"),
-                bytecode,
+            let has_type = node.args.len() == 3;
+            let _arg = unroll_node(
+                node.args
+                    .get(if has_type { 2 } else { 1 })
+                    .expect("Definition"),
             )?;
-            if arg != Type::Int32 {
-                return Err(CompilerError::from_token(
-                    &node.root,
-                    format!("Exporter Error: Can only define int32, but got {:?}", arg),
-                ));
-            }
-            bytecode.push(ByteCode::AllocaInt32);
+
+            let decl_type = if has_type {
+                Type::from_token(&node.args.get(1).expect("Type Declaration").root)
+            } else {
+                Type::Int32
+            };
+            bytecode.push(ByteCode::Alloca(decl_type.clone()));
             let index = register_map.len();
-            bytecode.push(ByteCode::StoreInt32(index));
+            bytecode.push(ByteCode::Store(decl_type, index));
             register_map.insert(
                 &node
                     .args
@@ -153,6 +197,14 @@ fn unroll_node<'a>(
             );
             Ok(Type::Void)
         }
+        TokenPayload::Cast => {
+            let arg_type = unroll_node(&node.args.get(0).expect("cast argument"))?;
+            let target_type = Type::from_token(&node.args.get(1).expect("Type Declaration").root);
+
+            bytecode.push(ByteCode::CastInt(arg_type, target_type.clone()));
+
+            Ok(target_type)
+        }
         _ => Err(CompilerError {
             location: node.root.begin.clone(),
             msg: format!("Exporter Error: Unknown token {:?}", node.root.token),
@@ -163,9 +215,9 @@ fn unroll_node<'a>(
 pub fn export(context: &Context, ast: Ast) -> Result<Vec<ByteCode>, CompilerError> {
     let mut bytecode = vec![];
     let mut register_map: HashMap<&str, usize> = hashmap! {"__init__"=> 1};
-    bytecode.push(ByteCode::AllocaInt32);
+    bytecode.push(ByteCode::Alloca(Type::Int32));
     bytecode.push(ByteCode::PushInt32(0));
-    bytecode.push(ByteCode::StoreInt32(0));
+    bytecode.push(ByteCode::Store(Type::Int32, 0));
     for statement in ast.statements.iter() {
         unroll_node(&mut register_map, context, statement, &mut bytecode)?;
     }
@@ -181,14 +233,14 @@ mod specs {
     use ByteCode::*;
     use TokenPayload::*;
 
-    static HEADER: [ByteCode; 3] = [AllocaInt32, PushInt32(0), StoreInt32(0)];
+    static HEADER: [ByteCode; 3] = [Alloca(Type::Int32), PushInt32(0), Store(Type::Int32, 0)];
 
     #[test]
     fn milestone_1() {
         let input = Ast {
             statements: vec![Node {
                 root: Token::stub(TokenPayload::Ident("stdout".to_owned())),
-                args: vec![Node::new(Token::stub(TokenPayload::Int32(42)))],
+                args: vec![Node::leaf(Token::stub(TokenPayload::Int32(42)))],
             }],
         };
 
@@ -214,8 +266,8 @@ mod specs {
                 args: vec![Node {
                     root: Token::stub(TokenPayload::Add),
                     args: vec![
-                        Node::new(Token::stub(TokenPayload::Int32(3))),
-                        Node::new(Token::stub(TokenPayload::Int32(5))),
+                        Node::leaf(Token::stub(TokenPayload::Int32(3))),
+                        Node::leaf(Token::stub(TokenPayload::Int32(5))),
                     ],
                 }],
             }],
@@ -228,7 +280,12 @@ mod specs {
         let actual = export(&context, input);
         assert!(actual.is_ok());
         let actual = actual.unwrap();
-        let expected = vec![PushInt32(3), PushInt32(5), AddInt32, StdOut];
+        let expected = vec![
+            PushInt32(3),
+            PushInt32(5),
+            ByteCode::Add(Type::Int32),
+            StdOut,
+        ];
         let expected = [&HEADER[..], &expected].concat();
 
         assert_eq!(actual, expected);
@@ -241,19 +298,19 @@ mod specs {
                 Node {
                     root: Token::stub(DefineLocal),
                     args: vec![
-                        Node::new(Token::stub(Ident("a".to_string()))),
-                        Node::new(Token::stub(Int32(3))),
+                        Node::leaf(Token::stub(Ident("a".to_string()))),
+                        Node::leaf(Token::stub(Int32(3))),
                     ],
                 },
                 Node {
                     root: Token::stub(DefineLocal),
                     args: vec![
-                        Node::new(Token::stub(Ident("b".to_string()))),
+                        Node::leaf(Token::stub(Ident("b".to_string()))),
                         Node {
-                            root: Token::stub(Add),
+                            root: Token::stub(TokenPayload::Add),
                             args: vec![
-                                Node::new(Token::stub(Ident("a".to_string()))),
-                                Node::new(Token::stub(Int32(5))),
+                                Node::leaf(Token::stub(Ident("a".to_string()))),
+                                Node::leaf(Token::stub(Int32(5))),
                             ],
                         },
                     ],
@@ -261,8 +318,8 @@ mod specs {
                 Node {
                     root: Token::stub(DefineLocal),
                     args: vec![
-                        Node::new(Token::stub(Ident("c".to_string()))),
-                        Node::new(Token::stub(Int32(7))),
+                        Node::leaf(Token::stub(Ident("c".to_string()))),
+                        Node::leaf(Token::stub(Int32(7))),
                     ],
                 },
                 Node {
@@ -270,8 +327,8 @@ mod specs {
                     args: vec![Node {
                         root: Token::stub(Ident("max".to_string())),
                         args: vec![
-                            Node::new(Token::stub(Ident("b".to_string()))),
-                            Node::new(Token::stub(Ident("c".to_string()))),
+                            Node::leaf(Token::stub(Ident("b".to_string()))),
+                            Node::leaf(Token::stub(Ident("c".to_string()))),
                         ],
                     }],
                 },
@@ -289,26 +346,203 @@ mod specs {
         };
 
         let actual = export(&context, input);
+
         assert!(actual.is_ok());
         let actual = actual.unwrap();
         let expected = vec![
             PushInt32(3),
-            AllocaInt32,
-            StoreInt32(1),
-            LoadInt32(1),
+            Alloca(Type::Int32),
+            Store(Type::Int32, 1),
+            Load(Type::Int32, 1),
             PushInt32(5),
-            AddInt32,
-            AllocaInt32,
-            StoreInt32(2),
+            ByteCode::Add(Type::Int32),
+            Alloca(Type::Int32),
+            Store(Type::Int32, 2),
             PushInt32(7),
-            AllocaInt32,
-            StoreInt32(3),
-            LoadInt32(2),
-            LoadInt32(3),
-            Max,
+            Alloca(Type::Int32),
+            Store(Type::Int32, 3),
+            Load(Type::Int32, 2),
+            Load(Type::Int32, 3),
+            Call2("max".to_string(), Type::Int32, Type::Int32, Type::Int32),
             StdOut,
         ];
         let expected = [&HEADER[..], &expected].concat();
         assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn milestone_5_explicit_cast() {
+        let input = Ast {
+            statements: vec![
+                Node {
+                    root: Token::stub(DefineLocal),
+                    args: vec![
+                        Node::leaf(Token::stub(Ident("a".to_string()))),
+                        Node::leaf(Token::stub(Ident("i32".to_string()))),
+                        Node::leaf(Token::stub(Int32(3))),
+                    ],
+                },
+                Node {
+                    root: Token::stub(DefineLocal),
+                    args: vec![
+                        Node::leaf(Token::stub(Ident("b".to_string()))),
+                        Node::leaf(Token::stub(Ident("i8".to_string()))),
+                        Node {
+                            root: Token::stub(TokenPayload::Add),
+                            args: vec![
+                                Node {
+                                    root: Token::stub(Cast),
+                                    args: vec![
+                                        Node::leaf(Token::stub(Ident("a".to_string()))),
+                                        Node::leaf(Token::stub(Ident("i8".to_string()))),
+                                    ],
+                                },
+                                Node {
+                                    root: Token::stub(Cast),
+                                    args: vec![
+                                        Node::leaf(Token::stub(Int32(5))),
+                                        Node::leaf(Token::stub(Ident("i8".to_string()))),
+                                    ],
+                                },
+                            ],
+                        },
+                    ],
+                },
+                Node {
+                    root: Token::stub(DefineLocal),
+                    args: vec![
+                        Node::leaf(Token::stub(Ident("c".to_string()))),
+                        Node::leaf(Token::stub(Ident("i8".to_string()))),
+                        Node {
+                            root: Token::stub(Cast),
+                            args: vec![
+                                Node::leaf(Token::stub(Int32(7))),
+                                Node::leaf(Token::stub(Ident("i8".to_string()))),
+                            ],
+                        },
+                    ],
+                },
+                Node {
+                    root: Token::stub(Ident("stdout".to_string())),
+                    args: vec![Node {
+                        root: Token::stub(Ident("max".to_string())),
+                        args: vec![
+                            Node::leaf(Token::stub(Ident("b".to_string()))),
+                            Node::leaf(Token::stub(Ident("c".to_string()))),
+                        ],
+                    }],
+                },
+            ],
+        };
+
+        let context = Context {
+            declarations: hashmap! {
+                "stdout".to_string() => Declaration::full_template_statement(1),
+                "max".to_string() => Declaration::full_template_function(2),
+                "a".to_string() => Declaration::variable(Type::Int32),
+                "b".to_string() => Declaration::variable(Type::Int8),
+                "c".to_string() => Declaration::variable(Type::Int8)
+            },
+        };
+
+        let actual = export(&context, input);
+        assert!(actual.is_ok());
+        let actual = actual.unwrap();
+
+        let expected = vec![
+            Alloca(Type::Int32),
+            PushInt32(0),
+            Store(Type::Int32, 0),
+            PushInt32(3),
+            Alloca(Type::Int32),
+            Store(Type::Int32, 1),
+            Load(Type::Int32, 1),
+            CastInt(Type::Int32, Type::Int8),
+            PushInt32(5),
+            CastInt(Type::Int32, Type::Int8),
+            ByteCode::Add(Type::Int8),
+            Alloca(Type::Int8),
+            Store(Type::Int8, 2),
+            PushInt32(7),
+            CastInt(Type::Int32, Type::Int8),
+            Alloca(Type::Int8),
+            Store(Type::Int8, 3),
+            Load(Type::Int8, 2),
+            Load(Type::Int8, 3),
+            Call2("max".to_string(), Type::Int8, Type::Int8, Type::Int8),
+            StdOut,
+        ];
+
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn milestone_5_main() {
+        let input = Ast {
+            statements: vec![
+                Node {
+                    root: Token::stub(DefineLocal),
+                    args: vec![
+                        Node::leaf(Token::stub(Ident("a".to_string()))),
+                        Node::leaf(Token::stub(Ident("i32".to_string()))),
+                        Node::leaf(Token::stub(Int32(3))),
+                    ],
+                },
+                Node {
+                    root: Token::stub(DefineLocal),
+                    args: vec![
+                        Node::leaf(Token::stub(Ident("b".to_string()))),
+                        Node::leaf(Token::stub(Ident("i8".to_string()))),
+                        Node {
+                            root: Token::stub(TokenPayload::Add),
+                            args: vec![
+                                Node {
+                                    root: Token::stub(Cast),
+                                    args: vec![
+                                        Node::leaf(Token::stub(Ident("a".to_string()))),
+                                        Node::leaf(Token::stub(Ident("i8".to_string()))),
+                                    ],
+                                },
+                                Node::leaf(Token::stub(Int32(5))),
+                            ],
+                        },
+                    ],
+                },
+                Node {
+                    root: Token::stub(DefineLocal),
+                    args: vec![
+                        Node::leaf(Token::stub(Ident("c".to_string()))),
+                        Node::leaf(Token::stub(Ident("i8".to_string()))),
+                        Node::leaf(Token::stub(Int32(7))),
+                    ],
+                },
+                Node {
+                    root: Token::stub(Ident("stdout".to_string())),
+                    args: vec![Node {
+                        root: Token::stub(Ident("max".to_string())),
+                        args: vec![
+                            Node::leaf(Token::stub(Ident("b".to_string()))),
+                            Node::leaf(Token::stub(Ident("c".to_string()))),
+                        ],
+                    }],
+                },
+            ],
+        };
+
+        let context = Context {
+            declarations: hashmap! {
+                "stdout".to_string() => Declaration::function(Type::Void, vec![Type::Int8], true),
+                "max".to_string() => Declaration::function(Type::Int8, vec![Type::Int8,Type::Int8], false),
+                "a".to_string() => Declaration::variable(Type::Int32),
+                "b".to_string() => Declaration::variable(Type::Int8),
+                "c".to_string() => Declaration::variable(Type::Int8)
+            },
+        };
+
+        let actual = export(&context, input);
+        // assert!(actual.is_ok());
+        if let Err(error) = actual {
+            error.print("test");
+        }
     }
 }

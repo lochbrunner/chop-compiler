@@ -1,5 +1,7 @@
 
-<a href="https://travis-ci.org/lochbrunner/chop-compiler"><img src="https://travis-ci.org/lochbrunner/chop-compiler.svg?branch=master" alt="Build Status"></a>
+[![build status](https://travis-ci.org/lochbrunner/chop-compiler.svg?branch=master)](https://travis-ci.org/lochbrunner/chop-compiler)
+[![dependency status](https://deps.rs/repo/github/lochbrunner/chop-compiler/status.svg)](https://deps.rs/repo/github/lochbrunner/chop-compiler)
+
 
 # Reference implementation for chop-lang
 
@@ -44,16 +46,17 @@ cchop <code filename> -o <output filename>
 1. [Compile MVP via LLVM](./milestones/2) :heavy_check_mark:
 1. [Mathematical operations and build-in functions](./milestones/3) :heavy_check_mark:
 1. [Variables](./milestones/4) :heavy_check_mark:
-1. Primitive Types
+1. [Primitive Types](./milestones/5)
 1. Objects
 1. Functions
 1. Enums
 1. Control instructions
 1. Borrowing (and checks)
+1. Caching
 1. Imports and Exports
 1. Meta Programming
 1. FFI
-1. Caching
+1. Debugging
 
 ## Goal - Self hosted language
 

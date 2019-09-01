@@ -1,4 +1,5 @@
 use crate::CompilerError;
+use crate::Type;
 use std::collections::HashMap;
 use std::fmt;
 
@@ -57,7 +58,10 @@ fn write_attribute(index: u32, attr: HashMap<&str, &str>, code: &mut String) {
 #[derive(Debug)]
 /// Same as in evaluation
 enum StackItem {
+    Int64(i64),
     Int32(i32),
+    Int16(i16),
+    Int8(i8),
     Ref(usize),
 }
 
@@ -71,12 +75,29 @@ where
     ));
 }
 
+fn get_last_item_rep_gen(stack: &mut Vec<StackItem>) -> Result<String, CompilerError> {
+    match stack.pop() {
+        None => Err(CompilerError::global("Missing argument on stack")),
+        Some(item) => match item {
+            StackItem::Ref(r) => Ok(format!("%{}", r)),
+            StackItem::Int8(v) => Ok(v.to_string()),
+            StackItem::Int16(v) => Ok(v.to_string()),
+            StackItem::Int32(v) => Ok(v.to_string()),
+            StackItem::Int64(v) => Ok(v.to_string()),
+        },
+    }
+}
+
 fn get_last_item_rep_i32(stack: &mut Vec<StackItem>) -> Result<String, CompilerError> {
     match stack.pop() {
         None => Err(CompilerError::global("Missing argument on stack")),
         Some(item) => match item {
             StackItem::Int32(v) => Ok(v.to_string()),
             StackItem::Ref(r) => Ok(format!("%{}", r)),
+            _ => Err(CompilerError::global(&format!(
+                "Expected stack item of type Int32, but got {:?}",
+                item
+            ))),
         },
     }
 }
@@ -93,35 +114,57 @@ fn call_stdout(
     Ok(())
 }
 
-fn call_i32_function_i32_i32(
+impl Type {
+    pub fn to_llvm(&self) -> &'static str {
+        match self {
+            Type::Int8 => "i8",
+            Type::Int16 => "i16",
+            Type::Int32 => "i32",
+            Type::Int64 => "i64",
+            Type::Void => "void",
+        }
+    }
+}
+
+fn call_function_2_gen(
     function_name: &str,
+    return_type: &Type,
+    a_type: &Type,
+    b_type: &Type,
     register_counter: &mut usize,
     stack: &mut Vec<StackItem>,
     code: &mut String,
 ) -> Result<(), CompilerError> {
-    let b = get_last_item_rep_i32(stack)?;
-    let a = get_last_item_rep_i32(stack)?;
+    let b = get_last_item_rep_gen(stack)?;
+    let a = get_last_item_rep_gen(stack)?;
     *register_counter += 1;
     code.push_str(&format!(
-        "  %{} = call i32 @{}(i32 {}, i32 {})\n",
-        register_counter, function_name, a, b
+        "  %{} = call {} @{}({} {}, {} {})\n",
+        register_counter,
+        return_type.to_llvm(),
+        function_name,
+        a_type.to_llvm(),
+        a,
+        b_type.to_llvm(),
+        b
     ));
     stack.push(StackItem::Ref(*register_counter));
     Ok(())
 }
 
-fn int32_operator(
+fn operator(
     operator_name: &str,
+    op_type: &Type,
     register_counter: &mut usize,
     stack: &mut Vec<StackItem>,
     code: &mut String,
 ) -> Result<(), CompilerError> {
     *register_counter += 1;
-    let b = get_last_item_rep_i32(stack)?;
-    let a = get_last_item_rep_i32(stack)?;
+    let b = get_last_item_rep_gen(stack)?;
+    let a = get_last_item_rep_gen(stack)?;
     code.push_str(&format!(
-        "  %{} = {} nsw i32 {}, {}\n",
-        operator_name, register_counter, a, b
+        "  %{} = {} nsw {} {}, {}\n",
+        operator_name, register_counter, op_type.to_llvm(), a, b
     ));
     stack.push(StackItem::Ref(*register_counter));
     Ok(())
@@ -142,7 +185,10 @@ pub fn export(instructions: &[ByteCode], source_filename: &str) -> Result<String
     let mut register_counter = 0;
 
     // Find all alloca
-    for _ in instructions.iter().filter(|s| **s == ByteCode::AllocaInt32) {
+    for _ in instructions
+        .iter()
+        .filter(|s| **s == ByteCode::Alloca(Type::Int32))
+    {
         register_counter += 1;
         code.push_str(&format!("  %{} = alloca i32, align 4\n", register_counter));
     }
@@ -152,18 +198,23 @@ pub fn export(instructions: &[ByteCode], source_filename: &str) -> Result<String
         match instruction {
             ByteCode::StdOut => call_stdout(&mut register_counter, &mut stack, &mut code)?,
             ByteCode::PushInt32(v) => stack.push(StackItem::Int32(*v)),
-            ByteCode::Max => {
-                call_i32_function_i32_i32("max", &mut register_counter, &mut stack, &mut code)?;
+            ByteCode::Call2(ident, return_type, arg_type_0, arg_type_1) => {
+                call_function_2_gen(
+                    ident,
+                    return_type,
+                    arg_type_0,
+                    arg_type_1,
+                    &mut register_counter,
+                    &mut stack,
+                    &mut code,
+                )?;
             }
-            ByteCode::Min => {
-                call_i32_function_i32_i32("min", &mut register_counter, &mut stack, &mut code)?;
-            }
-            ByteCode::StoreInt32(index) => {
+            ByteCode::Store(Type::Int32, index) => {
                 let a = get_last_item_rep_i32(&mut stack)?;
                 store_i32(*index + 1, a, &mut code);
             }
-            ByteCode::AllocaInt32 => (),
-            ByteCode::LoadInt32(index) => {
+            ByteCode::Alloca(_) => (),
+            ByteCode::Load(Type::Int32, index) => {
                 register_counter += 1;
                 code.push_str(&format!(
                     "  %{} = load i32, i32* %{}, align 4\n",
@@ -172,26 +223,27 @@ pub fn export(instructions: &[ByteCode], source_filename: &str) -> Result<String
                 ));
                 stack.push(StackItem::Ref(register_counter));
             }
-            ByteCode::AddInt32 => {
-                int32_operator("add", &mut register_counter, &mut stack, &mut code)?
+            ByteCode::Add(op_type) => {
+                operator("add", op_type, &mut register_counter, &mut stack, &mut code)?
             }
-            ByteCode::SubInt32 => {
-                int32_operator("sub", &mut register_counter, &mut stack, &mut code)?
+            ByteCode::Sub(op_type) => {
+                operator("sub", op_type, &mut register_counter, &mut stack, &mut code)?
             }
-            ByteCode::MulInt32 => {
-                int32_operator("mul", &mut register_counter, &mut stack, &mut code)?
+            ByteCode::Mul(op_type) => {
+                operator("mul", op_type, &mut register_counter, &mut stack, &mut code)?
             }
-            ByteCode::DivInt32 => {
-                int32_operator("sdiv", &mut register_counter, &mut stack, &mut code)?
+            ByteCode::Div(op_type) => {
+                operator("sdiv", op_type, &mut register_counter, &mut stack, &mut code)?
             }
-            ByteCode::RemInt32 => {
-                int32_operator("srem", &mut register_counter, &mut stack, &mut code)?
-            } // _ => {
-              //     return Err(CompilerError::global(&format!(
-              //         "Unknown instruction {:?}",
-              //         instruction
-              //     )))
-              // }
+            ByteCode::Rem(op_type) => {
+                operator("srem", op_type, &mut register_counter, &mut stack, &mut code)?
+            }
+            _ => {
+                return Err(CompilerError::global(&format!(
+                    "Unknown instruction {:?}",
+                    instruction
+                )))
+            }
         }
     }
 

@@ -1,4 +1,4 @@
-use crate::token::Token;
+use crate::token::{Location, Token};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Node<T> {
@@ -7,13 +7,27 @@ pub struct Node<T> {
 }
 
 impl<T> Node<T> {
-    pub fn new(token: T) -> Node<T> {
+    pub fn leaf(token: T) -> Node<T> {
         Node {
             root: token,
             args: vec![],
         }
     }
 }
+
+/// Should we split language specific AST and User defined (=dynamic) AST?
+// pub struct DefinitionNode<T> {
+//     pub ident: String,
+//     pub type_string: Option<String>,
+//     pub value: Node<T>,
+//     pub begin: Location,
+//     pub end: Location,
+// }
+
+// pub enum AstNode {
+//     Dynamic(Node<Token>),
+//     Definition(DefinitionNode<Token>),
+// }
 
 #[derive(Debug, PartialEq)]
 pub struct Ast {

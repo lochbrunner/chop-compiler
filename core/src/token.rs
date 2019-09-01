@@ -19,6 +19,7 @@ pub enum TokenPayload {
     DefineLocal, // :=
     // DefinePublic, // :+
     // Declare,      // :
+    Cast, // as
     // Operators
     Pipe, // |
     // Modifiers
@@ -34,6 +35,7 @@ pub enum TokenPayload {
     // Dot,
     ParenthesesL,
     ParenthesesR,
+    TypeDeclaration,
     // BraceL,
     // BraceR,
 }

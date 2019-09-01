@@ -3,10 +3,11 @@ use crate::CompilerError;
 use nom::{
   branch::alt,
   bytes::complete::{tag, take_until, take_while},
+  character::complete::{alpha0, alphanumeric0},
   combinator::{complete, map, opt},
   error::{ErrorKind, ParseError},
   multi::{many0, many1},
-  sequence::{preceded, terminated},
+  sequence::{pair, preceded, terminated},
   IResult,
 };
 use nom_locate::{position, LocatedSpanEx};
@@ -80,6 +81,8 @@ fn operators(code: Span) -> IResult<Span, TokenPayload> {
   alt((
     map(tag("|"), |_| TokenPayload::Pipe),
     map(tag(":="), |_| TokenPayload::DefineLocal),
+    map(tag(":"), |_| TokenPayload::TypeDeclaration),
+    map(tag("as"), |_| TokenPayload::Cast),
   ))(code)
 }
 
@@ -109,13 +112,12 @@ fn parse_integer(code: Span) -> IResult<Span, TokenPayload> {
 }
 
 fn parse_ident(code: Span) -> IResult<Span, TokenPayload> {
-  let chars = "_";
-  let (code, ident) =
-    take_while(move |c: char| c.is_ascii_alphabetic() || chars.contains(c))(code)?;
-  if ident.fragment.is_empty() {
+  let (code, (first, second)) = pair(alpha0, alphanumeric0)(code)?;
+  let ident = format!("{}{}", first.fragment, second.fragment);
+  if ident.is_empty() {
     Err(nom::Err::Error((code, ErrorKind::Tag)))
   } else {
-    Ok((code, TokenPayload::Ident(ident.fragment.to_owned())))
+    Ok((code, TokenPayload::Ident(ident)))
   }
 }
 
@@ -602,6 +604,54 @@ mod specs {
       ParenthesesL,
       Ident("b".to_string()),
       Multiply,
+      Ident("c".to_string()),
+      ParenthesesR,
+    ];
+
+    assert_eq!(actual, expected);
+  }
+
+  #[test]
+  fn milestone_5() {
+    let actual = lex(
+      &"#!/usr/bin/env ichop
+
+        a: i32 := 3
+        b: i8 := a as i8 + 5
+        c: i8 := 7
+
+        stdout max(b,c)",
+    );
+
+    assert!(actual.is_ok());
+    let actual = actual.unwrap();
+    let actual = actual.into_iter().map(|t| t.token).collect::<Vec<_>>();
+
+    let expected = [
+      Ident("a".to_string()),
+      TypeDeclaration,
+      Ident("i32".to_string()),
+      DefineLocal,
+      Int32(3),
+      Ident("b".to_string()),
+      TypeDeclaration,
+      Ident("i8".to_string()),
+      DefineLocal,
+      Ident("a".to_string()),
+      Cast,
+      Ident("i8".to_string()),
+      Add,
+      Int32(5),
+      Ident("c".to_string()),
+      TypeDeclaration,
+      Ident("i8".to_string()),
+      DefineLocal,
+      Int32(7),
+      Ident("stdout".to_string()),
+      Ident("max".to_string()),
+      ParenthesesL,
+      Ident("b".to_string()),
+      Delimiter,
       Ident("c".to_string()),
       ParenthesesR,
     ];

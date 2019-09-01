@@ -47,7 +47,7 @@ mod specs {
                     },
                 },
                 args: vec![
-                    Node::new(Token {
+                    Node::leaf(Token {
                         token: TokenPayload::Int32(42),
                         begin: Location {
                             line: 3,
@@ -58,7 +58,7 @@ mod specs {
                             offset: 30,
                         },
                     }),
-                    Node::new(Token {
+                    Node::leaf(Token {
                         token: TokenPayload::Ident("stdout".to_owned()),
                         begin: Location {
                             line: 3,
@@ -89,7 +89,7 @@ mod specs {
                         offset: 39,
                     },
                 },
-                args: vec![Node::new(Token {
+                args: vec![Node::leaf(Token {
                     token: TokenPayload::Int32(42),
                     begin: Location {
                         line: 3,

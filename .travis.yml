@@ -24,7 +24,13 @@ jobs:
         - cargo install --path ichop --force
         - cargo install --path cchop --force
       script:
-        - ./milestones/test.sh 
+        - ./milestones/test.sh
+    - name: Coverage
+      # See https://github.com/roblabla/cargo-travis
+      before_script:
+        - cargo install cargo-travis
+      script:
+        - cargo coveralls
 cache:
   directories:
     - /home/travis/.cargo

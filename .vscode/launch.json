@@ -34,7 +34,7 @@
                     "test",
                     "--no-run",
                     "--lib=core",
-                    "--package=core"
+                    "--package=core",
                 ],
                 "filter": {
                     "name": "core",
@@ -42,7 +42,8 @@
                 }
             },
             "args": [
-                "e2e::multiple_statements"
+                "exporter::bytecode::specs::milestone_5_main",
+                "--nocapture",
             ],
             "cwd": "${workspaceFolder}",
             "sourceLanguages": [

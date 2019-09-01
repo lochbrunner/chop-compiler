@@ -9,4 +9,4 @@ edition = "2018"
 [dependencies]
 maplit = "^1.0.1"
 nom = "5.0.0"
-nom_locate = "0.4.0"
+nom_locate = "1.0.0"
