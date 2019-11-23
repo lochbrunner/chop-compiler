@@ -1,0 +1,21 @@
+#!/usr/bin/env ichop
+
+A := {
+    x :+ 12
+    y :+ 14
+}
+
+B := {
+    x :+ 12
+    y :+ 14
+}
+
+add := (a,b) => {
+    x :+ a.x + b.x
+    y :+ a.y + b.y
+}
+
+sum := add(A,B)
+
+stdout sum.x
+stdout sum.y
