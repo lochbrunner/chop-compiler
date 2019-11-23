@@ -140,7 +140,7 @@ fn create_statement(
         // How much args does the op need?
         if stack.symbol.len() < op.req_args_count {
             return Err(CompilerError {
-                location: op.token.begin.clone(),
+                location: op.token.loc.clone(),
                 msg: format!("Expecting at least {} arguments", op.req_args_count),
             });
         }
@@ -304,7 +304,7 @@ pub fn parse(context: &mut Context, tokens: &[Token]) -> Result<ast::Ast, Compil
             TokenPayload::DefineLocal => {
                 if stack.symbol.is_empty() {
                     return Err(CompilerError {
-                        location: token.begin.clone(),
+                        location: token.loc.clone(),
                         msg: "No identifer for new definition found!".to_string(),
                     });
                 } else {
@@ -324,7 +324,7 @@ pub fn parse(context: &mut Context, tokens: &[Token]) -> Result<ast::Ast, Compil
                 if stack.check_precedence(&Precedence::Pipe) {
                     if let Err(msg) = astify(context, Precedence::Pipe, &mut stack) {
                         return Err(CompilerError {
-                            location: token.begin.clone(),
+                            location: token.loc.clone(),
                             msg: format!("Error on astify: {}", msg),
                         });
                     }
@@ -342,7 +342,7 @@ pub fn parse(context: &mut Context, tokens: &[Token]) -> Result<ast::Ast, Compil
                 if stack.check_precedence(&Precedence::PSum) {
                     if let Err(msg) = astify(context, Precedence::PSum, &mut stack) {
                         return Err(CompilerError {
-                            location: token.begin.clone(),
+                            location: token.loc.clone(),
                             msg: format!("Error on astify: {}", msg),
                         });
                     }
@@ -370,7 +370,7 @@ pub fn parse(context: &mut Context, tokens: &[Token]) -> Result<ast::Ast, Compil
                 if stack.check_precedence(&Precedence::PCast) {
                     if let Err(msg) = astify(context, Precedence::PCast, &mut stack) {
                         return Err(CompilerError {
-                            location: token.begin.clone(),
+                            location: token.loc.clone(),
                             msg: format!("Error on astify: {}", msg),
                         });
                     }

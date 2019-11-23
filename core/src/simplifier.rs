@@ -22,7 +22,7 @@ fn get2_int32(args: &[Node]) -> Option<(i32, i32)> {
 
 fn simplify_node(node: Node) -> Result<Node, CompilerError> {
     let Node {
-        root: Token { token, begin, end },
+        root: Token { token, loc },
         args,
     } = node;
     let args = args
@@ -40,7 +40,7 @@ fn simplify_node(node: Node) -> Result<Node, CompilerError> {
 
     if is_int32 {
         return Ok(Node {
-            root: Token { token, begin, end },
+            root: Token { token, loc },
             args,
         });
     }
@@ -51,7 +51,7 @@ fn simplify_node(node: Node) -> Result<Node, CompilerError> {
         | TokenPayload::Divide
         | TokenPayload::Remainder => match get2_int32(&args) {
             None => Ok(Node {
-                root: Token { token, begin, end },
+                root: Token { token, loc },
                 args,
             }),
             Some((a, b)) => {
@@ -64,13 +64,13 @@ fn simplify_node(node: Node) -> Result<Node, CompilerError> {
                     _ => token,
                 };
                 Ok(Node {
-                    root: Token { token, begin, end },
+                    root: Token { token, loc },
                     args: vec![],
                 })
             }
         },
         _ => Ok(Node {
-            root: Token { token, begin, end },
+            root: Token { token, loc },
             args,
         }),
     }

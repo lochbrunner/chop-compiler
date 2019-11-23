@@ -80,7 +80,7 @@ fn unroll_node<'a>(
                 .collect::<Result<Vec<_>, CompilerError>>()?;
             let needed_type = get_common_type_2(
                 &format!("{:?}", node.root.token),
-                &node.root.begin,
+                &node.root.loc,
                 &arg_types,
             )?;
             let return_type = needed_type.clone();
@@ -99,7 +99,7 @@ fn unroll_node<'a>(
             Ok(Type::Int32)
         }
         TokenPayload::Ident(ref ident) => {
-            let declaration = context.get_declaration(ident, node.root.begin.clone())?;
+            let declaration = context.get_declaration(ident, &node.root.loc)?;
             let arg_types = node
                 .args
                 .iter()
@@ -204,7 +204,7 @@ fn unroll_node<'a>(
             Ok(target_type)
         }
         _ => Err(CompilerError {
-            location: node.root.begin.clone(),
+            location: node.root.loc.clone(),
             msg: format!("Exporter Error: Unknown token {:?}", node.root.token),
         }),
     }

@@ -15,7 +15,7 @@ pub fn generate(ast: Ast) -> Result<Ast, CompilerError> {
             TokenPayload::Ident(_) => Ok(statement), // Function Call
             TokenPayload::DefineLocal => Ok(statement),
             _ => Err(CompilerError {
-                location: statement.root.begin.clone(),
+                location: statement.root.loc.clone(),
                 msg: format!(
                     "Generator Error: Token {:?} is not implemented yet!",
                     statement.root.token
@@ -37,36 +37,27 @@ mod specs {
             statements: vec![Node {
                 root: Token {
                     token: TokenPayload::Pipe,
-                    begin: Location {
+                    loc: Location {
                         line: 3,
-                        offset: 31,
-                    },
-                    end: Location {
-                        line: 3,
-                        offset: 32,
+                        begin: 31,
+                        end: 32,
                     },
                 },
                 args: vec![
                     Node::leaf(Token {
                         token: TokenPayload::Int32(42),
-                        begin: Location {
+                        loc: Location {
                             line: 3,
-                            offset: 28,
-                        },
-                        end: Location {
-                            line: 3,
-                            offset: 30,
+                            begin: 28,
+                            end: 30,
                         },
                     }),
                     Node::leaf(Token {
                         token: TokenPayload::Ident("stdout".to_owned()),
-                        begin: Location {
+                        loc: Location {
                             line: 3,
-                            offset: 33,
-                        },
-                        end: Location {
-                            line: 3,
-                            offset: 39,
+                            begin: 33,
+                            end: 39,
                         },
                     }),
                 ],
@@ -80,24 +71,18 @@ mod specs {
             statements: vec![Node {
                 root: Token {
                     token: TokenPayload::Ident("stdout".to_owned()),
-                    begin: Location {
+                    loc: Location {
                         line: 3,
-                        offset: 33,
-                    },
-                    end: Location {
-                        line: 3,
-                        offset: 39,
+                        begin: 33,
+                        end: 39,
                     },
                 },
                 args: vec![Node::leaf(Token {
                     token: TokenPayload::Int32(42),
-                    begin: Location {
+                    loc: Location {
                         line: 3,
-                        offset: 28,
-                    },
-                    end: Location {
-                        line: 3,
-                        offset: 30,
+                        begin: 28,
+                        end: 30,
                     },
                 })],
             }],

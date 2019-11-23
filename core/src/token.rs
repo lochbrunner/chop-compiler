@@ -1,9 +1,10 @@
 use std::fmt;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct Location {
     pub line: u32,
-    pub offset: usize,
+    pub begin: usize,
+    pub end: usize,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -53,8 +54,7 @@ impl TokenPayload {
 #[derive(Clone, PartialEq)]
 pub struct Token {
     pub token: TokenPayload,
-    pub begin: Location,
-    pub end: Location,
+    pub loc: Location,
     // pub filename: &str,
 }
 
@@ -69,8 +69,7 @@ impl Token {
     pub fn stub(token: TokenPayload) -> Token {
         Token {
             token,
-            begin: Location { line: 0, offset: 0 },
-            end: Location { line: 0, offset: 0 },
+            loc: Location { line: 0, begin: 0, end: 0 },
         }
     }
 }

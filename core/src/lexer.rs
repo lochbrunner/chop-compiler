@@ -37,13 +37,10 @@ fn sp<'a, E: ParseError<Span<'a>>>(i: Span<'a>) -> IResult<Span<'a>, Span<'a>, E
 impl Token {
   fn new(begin: Span, end: Span, payload: TokenPayload) -> Token {
     Token {
-      begin: Location {
-        offset: begin.offset,
+      loc: Location {
         line: begin.line,
-      },
-      end: Location {
-        offset: end.offset,
-        line: end.line,
+        begin: begin.offset,
+        end: end.offset,
       },
       // filename: begin.extra
       token: payload,
@@ -164,7 +161,8 @@ pub fn lex(code: &str) -> Result<Vec<Token>, CompilerError> {
           msg: format!("Incomplete Error: {:?}", remaining.fragment),
           location: Location {
             line: remaining.line,
-            offset: remaining.offset,
+            begin: remaining.offset,
+            end: remaining.offset,
           },
         })
       }
@@ -172,20 +170,22 @@ pub fn lex(code: &str) -> Result<Vec<Token>, CompilerError> {
     Err(error) => match error {
       nom::Err::Incomplete(_) => Err(CompilerError {
         msg: "Incomplete".to_string(),
-        location: Location { line: 0, offset: 0 },
+        location: Default::default(),
       }),
       nom::Err::Error(error) => Err(CompilerError {
         msg: format!("{:?} Error: {:?}", error.1, error.0.fragment),
         location: Location {
           line: error.0.line,
-          offset: error.0.offset,
+          begin: error.0.offset,
+          end: error.0.offset,
         },
       }),
       nom::Err::Failure(error) => Err(CompilerError {
         msg: format!("{:?} Failure: {:?}", error.1, error.0.fragment),
         location: Location {
           line: error.0.line,
-          offset: error.0.offset,
+          begin: error.0.offset,
+          end: error.0.offset,
         },
       }),
     },
@@ -203,8 +203,11 @@ mod specs {
     let actual = lex(&":= ").unwrap();
     let expected = vec![Token {
       token: TokenPayload::DefineLocal,
-      begin: Location { line: 1, offset: 0 },
-      end: Location { line: 1, offset: 2 },
+      loc: Location {
+        line: 1,
+        begin: 0,
+        end: 2,
+      },
     }];
 
     assert_eq!(actual, expected);
@@ -216,20 +219,26 @@ mod specs {
     let expected = vec![
       Token {
         token: TokenPayload::DefineLocal,
-        begin: Location { line: 1, offset: 1 },
-        end: Location { line: 1, offset: 3 },
+        loc: Location {
+          line: 1,
+          begin: 1,
+          end: 3,
+        },
       },
       Token {
         token: TokenPayload::Pipe,
-        begin: Location { line: 1, offset: 6 },
-        end: Location { line: 1, offset: 7 },
+        loc: Location {
+          line: 1,
+          begin: 6,
+          end: 7,
+        },
       },
       Token {
         token: TokenPayload::DefineLocal,
-        begin: Location { line: 2, offset: 9 },
-        end: Location {
+        loc: Location {
           line: 2,
-          offset: 11,
+          begin: 9,
+          end: 11,
         },
       },
     ];
@@ -241,7 +250,11 @@ mod specs {
   fn error_unknown_op() {
     let actual = lex(&"~");
     let expected = Err(CompilerError {
-      location: Location { line: 1, offset: 0 },
+      location: Location {
+        line: 1,
+        begin: 0,
+        end: 0,
+      },
       msg: "Tag Error: \"~\"".to_owned(),
     });
 
@@ -253,7 +266,11 @@ mod specs {
   fn error_incomplete_parse() {
     let actual = lex(&"| := ~ |");
     let expected = Err(CompilerError {
-      location: Location { line: 1, offset: 5 },
+      location: Location {
+        line: 1,
+        begin: 5,
+        end: 5,
+      },
       msg: "Incomplete Error: \"~ |\"".to_owned(),
     });
 
@@ -273,35 +290,26 @@ mod specs {
     let expected = vec![
       Token {
         token: TokenPayload::Int32(42),
-        begin: Location {
+        loc: Location {
           line: 3,
-          offset: 28,
-        },
-        end: Location {
-          line: 3,
-          offset: 30,
+          begin: 28,
+          end: 30,
         },
       },
       Token {
         token: TokenPayload::Pipe,
-        begin: Location {
+        loc: Location {
           line: 3,
-          offset: 31,
-        },
-        end: Location {
-          line: 3,
-          offset: 32,
+          begin: 31,
+          end: 32,
         },
       },
       Token {
         token: TokenPayload::Ident("stdout".to_owned()),
-        begin: Location {
+        loc: Location {
           line: 3,
-          offset: 33,
-        },
-        end: Location {
-          line: 3,
-          offset: 39,
+          begin: 33,
+          end: 39,
         },
       },
     ];
@@ -317,25 +325,34 @@ mod specs {
     let expected = vec![
       Token {
         token: TokenPayload::Ident("stdout".to_string()),
-        begin: Location { line: 1, offset: 0 },
-        end: Location { line: 1, offset: 6 },
+        loc: Location {
+          line: 1,
+          begin: 0,
+          end: 6,
+        },
       },
       Token {
         token: TokenPayload::ParenthesesL,
-        begin: Location { line: 1, offset: 6 },
-        end: Location { line: 1, offset: 7 },
+        loc: Location {
+          line: 1,
+          begin: 6,
+          end: 7,
+        },
       },
       Token {
         token: TokenPayload::Int32(42),
-        begin: Location { line: 1, offset: 7 },
-        end: Location { line: 1, offset: 9 },
+        loc: Location {
+          line: 1,
+          begin: 7,
+          end: 9,
+        },
       },
       Token {
         token: TokenPayload::ParenthesesR,
-        begin: Location { line: 1, offset: 9 },
-        end: Location {
+        loc: Location {
           line: 1,
-          offset: 10,
+          begin: 9,
+          end: 10,
         },
       },
     ];
@@ -352,13 +369,19 @@ mod specs {
     let expected = vec![
       Token {
         token: TokenPayload::Ident("stdout".to_string()),
-        begin: Location { line: 1, offset: 0 },
-        end: Location { line: 1, offset: 6 },
+        loc: Location {
+          line: 1,
+          begin: 0,
+          end: 6,
+        },
       },
       Token {
         token: TokenPayload::Int32(42),
-        begin: Location { line: 1, offset: 7 },
-        end: Location { line: 1, offset: 9 },
+        loc: Location {
+          line: 1,
+          begin: 7,
+          end: 9,
+        },
       },
     ];
     assert_eq!(actual, expected);
@@ -403,167 +426,122 @@ mod specs {
     let expected = vec![
       Token {
         token: Ident("stdout".to_string()),
-        begin: Location {
+        loc: Location {
           line: 3,
-          offset: 28,
-        },
-        end: Location {
-          line: 3,
-          offset: 34,
+          begin: 28,
+          end: 34,
         },
       },
       Token {
         token: Ident("max".to_string()),
-        begin: Location {
+        loc: Location {
           line: 3,
-          offset: 35,
-        },
-        end: Location {
-          line: 3,
-          offset: 38,
+          begin: 35,
+          end: 38,
         },
       },
       Token {
         token: ParenthesesL,
-        begin: Location {
+        loc: Location {
           line: 3,
-          offset: 38,
-        },
-        end: Location {
-          line: 3,
-          offset: 39,
+          begin: 38,
+          end: 39,
         },
       },
       Token {
         token: Int32(3),
-        begin: Location {
+        loc: Location {
           line: 3,
-          offset: 39,
-        },
-        end: Location {
-          line: 3,
-          offset: 40,
+          begin: 39,
+          end: 40,
         },
       },
       Token {
         token: Add,
-        begin: Location {
+        loc: Location {
           line: 3,
-          offset: 40,
-        },
-        end: Location {
-          line: 3,
-          offset: 41,
+          begin: 40,
+          end: 41,
         },
       },
       Token {
         token: Int32(5),
-        begin: Location {
+        loc: Location {
           line: 3,
-          offset: 41,
-        },
-        end: Location {
-          line: 3,
-          offset: 42,
+          begin: 41,
+          end: 42,
         },
       },
       Token {
         token: Multiply,
-        begin: Location {
+        loc: Location {
           line: 3,
-          offset: 42,
-        },
-        end: Location {
-          line: 3,
-          offset: 43,
+          begin: 42,
+          end: 43,
         },
       },
       Token {
         token: Int32(-7),
-        begin: Location {
+        loc: Location {
           line: 3,
-          offset: 43,
-        },
-        end: Location {
-          line: 3,
-          offset: 45,
+          begin: 43,
+          end: 45,
         },
       },
       Token {
         token: Delimiter,
-        begin: Location {
+        loc: Location {
           line: 3,
-          offset: 45,
-        },
-        end: Location {
-          line: 3,
-          offset: 46,
+          begin: 45,
+          end: 46,
         },
       },
       Token {
         token: Int32(11),
-        begin: Location {
+        loc: Location {
           line: 3,
-          offset: 47,
-        },
-        end: Location {
-          line: 3,
-          offset: 49,
+          begin: 47,
+          end: 49,
         },
       },
       Token {
         token: Multiply,
-        begin: Location {
+        loc: Location {
           line: 3,
-          offset: 49,
-        },
-        end: Location {
-          line: 3,
-          offset: 50,
+          begin: 49,
+          end: 50,
         },
       },
       Token {
         token: Int32(13),
-        begin: Location {
+        loc: Location {
           line: 3,
-          offset: 50,
-        },
-        end: Location {
-          line: 3,
-          offset: 52,
+          begin: 50,
+          end: 52,
         },
       },
       Token {
         token: Subtract,
-        begin: Location {
+        loc: Location {
           line: 3,
-          offset: 52,
-        },
-        end: Location {
-          line: 3,
-          offset: 53,
+          begin: 52,
+          end: 53,
         },
       },
       Token {
         token: Int32(15),
-        begin: Location {
+        loc: Location {
           line: 3,
-          offset: 53,
-        },
-        end: Location {
-          line: 3,
-          offset: 55,
+          begin: 53,
+          end: 55,
         },
       },
       Token {
         token: ParenthesesR,
-        begin: Location {
+        loc: Location {
           line: 3,
-          offset: 55,
-        },
-        end: Location {
-          line: 3,
-          offset: 56,
+          begin: 55,
+          end: 56,
         },
       },
     ];

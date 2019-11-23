@@ -225,11 +225,11 @@ impl Context {
     pub fn get_declaration(
         &self,
         ident: &str,
-        location: token::Location,
+        location: &token::Location,
     ) -> Result<&Declaration, CompilerError> {
         match self.declarations.get(ident) {
             None => Err(CompilerError {
-                location,
+                location: location.clone(),
                 msg: format!("Symbol {} was not defined.", ident),
             }),
             Some(dec) => Ok(dec),
@@ -247,21 +247,21 @@ impl CompilerError {
     pub fn print(&self, filename: &str) {
         eprintln!(
             "{}:{}:{}",
-            filename, self.location.line, self.location.offset
+            filename, self.location.line, self.location.begin
         );
         eprintln!("{}", self.msg);
     }
 
     pub fn global(msg: &str) -> CompilerError {
         CompilerError {
-            location: token::Location { offset: 0, line: 0 },
+            location: Default::default(),
             msg: msg.to_string(),
         }
     }
 
     pub fn from_token(token: &token::Token, msg: String) -> CompilerError {
         CompilerError {
-            location: token.begin.clone(),
+            location: token.loc.clone(),
             msg,
         }
     }
