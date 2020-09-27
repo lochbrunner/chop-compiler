@@ -1,9 +1,6 @@
-use crate::ast::{Ast, Node};
-use crate::token::{Location, Token, TokenPayload};
-use crate::CompilerError;
-use crate::Context;
-use crate::Signature;
-use crate::Type;
+use crate::ast::{AstTokenPayload, DenseAst, DenseToken, Node};
+use crate::declaration::{Context, Signature, Type};
+use crate::error::{CompilerError, Location};
 use std::collections::HashMap;
 
 #[derive(PartialEq, Debug, Clone)]
@@ -63,42 +60,45 @@ fn get_common_type_2(
 fn unroll_node<'a>(
     register_map: &mut HashMap<&'a str, usize>,
     context: &Context,
-    node: &'a Node<Token>,
+    node: &'a Node<DenseToken>,
     bytecode: &mut Vec<ByteCode>,
 ) -> Result<Type, CompilerError> {
     let mut unroll_node = |node| unroll_node(register_map, context, node, bytecode);
-    match node.root.token {
-        TokenPayload::Add
-        | TokenPayload::Subtract
-        | TokenPayload::Multiply
-        | TokenPayload::Divide
-        | TokenPayload::Remainder => {
+    match node.root.payload {
+        AstTokenPayload::Add
+        | AstTokenPayload::Subtract
+        | AstTokenPayload::Multiply
+        | AstTokenPayload::Divide
+        | AstTokenPayload::Remainder => {
             let arg_types = node
                 .args
                 .iter()
                 .map(unroll_node)
                 .collect::<Result<Vec<_>, CompilerError>>()?;
             let needed_type = get_common_type_2(
-                &format!("{:?}", node.root.token),
+                &format!("{:?}", node.root.payload),
                 &node.root.loc,
                 &arg_types,
             )?;
             let return_type = needed_type.clone();
-            bytecode.push(match node.root.token {
-                TokenPayload::Add => ByteCode::Add(needed_type),
-                TokenPayload::Subtract => ByteCode::Sub(needed_type),
-                TokenPayload::Multiply => ByteCode::Mul(needed_type),
-                TokenPayload::Divide => ByteCode::Div(needed_type),
-                TokenPayload::Remainder => ByteCode::Rem(needed_type),
+            bytecode.push(match node.root.payload {
+                AstTokenPayload::Add => ByteCode::Add(needed_type),
+                AstTokenPayload::Subtract => ByteCode::Sub(needed_type),
+                AstTokenPayload::Multiply => ByteCode::Mul(needed_type),
+                AstTokenPayload::Divide => ByteCode::Div(needed_type),
+                AstTokenPayload::Remainder => ByteCode::Rem(needed_type),
                 _ => ByteCode::Add(needed_type),
             });
             Ok(return_type)
         }
-        TokenPayload::Int32(v) => {
+        AstTokenPayload::Integer(ref provider) => {
+            // TODO: get value of correct type
+            // let v = provider.get_i32().convert(&node.root.loc)?;
+            let v = provider.content as i32;
             bytecode.push(ByteCode::PushInt32(v));
             Ok(Type::Int32)
         }
-        TokenPayload::Ident(ref ident) => {
+        AstTokenPayload::Symbol(ref ident) => {
             let declaration = context.get_declaration(ident, &node.root.loc)?;
             let arg_types = node
                 .args
@@ -114,7 +114,7 @@ fn unroll_node<'a>(
             ) {
                 Ok(signature) => signature,
                 Err(msg) => {
-                    return Err(CompilerError::from_token(
+                    return Err(CompilerError::from_token::<DenseToken>(
                         &node.root,
                         format!(
                             "Signature of variable/function \"{}\" could not be resolved: {}",
@@ -127,7 +127,7 @@ fn unroll_node<'a>(
                 if let Some(index) = register_map.get::<str>(ident) {
                     bytecode.push(ByteCode::Load(signature.return_type.clone(), *index));
                 } else {
-                    return Err(CompilerError::from_token(
+                    return Err(CompilerError::from_token::<DenseToken>(
                         &node.root,
                         format!("No Variable with name {} found in register", ident),
                     ));
@@ -139,14 +139,14 @@ fn unroll_node<'a>(
                     Some(instruction) => bytecode.push(instruction),
                     None => {
                         if arg_types.len() != 2 {
-                            return Err(CompilerError::from_token(
+                            return Err(CompilerError::from_token::<DenseToken>(
                                 &node.root,
                                 format!("No Function {} expects {} arguments, but only 2 arguments are supported yet.", ident, declaration.req_args_count()),
                             ));
                         }
                         bytecode.push(ByteCode::Call2(
                             ident.clone(),
-                            return_type.clone(),
+                            return_type,
                             args.get(0).unwrap().clone(),
                             args.get(1).unwrap().clone(),
                         ));
@@ -155,11 +155,11 @@ fn unroll_node<'a>(
             }
             Ok(signature.return_type)
         }
-        TokenPayload::DefineLocal => {
+        AstTokenPayload::DefineLocal => {
             // Compile argument
             if node.args.len() != 2 && node.args.len() != 3 {
                 // TODO: Handle Type declaration
-                return Err(CompilerError::from_token(
+                return Err(CompilerError::from_token::<DenseToken>(
                     &node.root,
                     format!(
                         "Exporter Error: DefineLocal need two arguments but got {}",
@@ -175,7 +175,7 @@ fn unroll_node<'a>(
             )?;
 
             let decl_type = if has_type {
-                Type::from_token(&node.args.get(1).expect("Type Declaration").root)
+                Type::from_dense_token(&node.args.get(1).expect("Type Declaration").root)
             } else {
                 Type::Int32
             };
@@ -188,16 +188,17 @@ fn unroll_node<'a>(
                     .get(0)
                     .expect("Definition")
                     .root
-                    .token
+                    .payload
                     .get_ident()
                     .expect("ident"),
                 index,
             );
             Ok(Type::Void)
         }
-        TokenPayload::Cast => {
+        AstTokenPayload::Cast => {
             let arg_type = unroll_node(&node.args.get(0).expect("cast argument"))?;
-            let target_type = Type::from_token(&node.args.get(1).expect("Type Declaration").root);
+            let target_type =
+                Type::from_dense_token(&node.args.get(1).expect("Type Declaration").root);
 
             bytecode.push(ByteCode::CastInt(arg_type, target_type.clone()));
 
@@ -205,12 +206,12 @@ fn unroll_node<'a>(
         }
         _ => Err(CompilerError {
             location: node.root.loc.clone(),
-            msg: format!("Exporter Error: Unknown token {:?}", node.root.token),
+            msg: format!("Exporter Error: Unknown token {:?}", node.root.payload),
         }),
     }
 }
 
-pub fn export(context: &Context, ast: Ast) -> Result<Vec<ByteCode>, CompilerError> {
+pub fn compile(context: &Context, ast: DenseAst) -> Result<Vec<ByteCode>, CompilerError> {
     let mut bytecode = vec![];
     let mut register_map: HashMap<&str, usize> = hashmap! {"__init__"=> 1};
     bytecode.push(ByteCode::Alloca(Type::Int32));
@@ -225,8 +226,8 @@ pub fn export(context: &Context, ast: Ast) -> Result<Vec<ByteCode>, CompilerErro
 #[cfg(test)]
 mod specs {
     use super::*;
-    use crate::ast::Node;
-    use crate::token::{Token, TokenPayload};
+    use crate::ast::{DenseAst, DenseToken, LexerTokenPayloadStub, Node};
+    use crate::token::TokenPayload;
     use crate::Declaration;
     use ByteCode::*;
     use TokenPayload::*;
@@ -235,10 +236,10 @@ mod specs {
 
     #[test]
     fn milestone_1() {
-        let input = Ast {
+        let input = DenseAst {
             statements: vec![Node {
-                root: Token::stub(TokenPayload::Ident("stdout".to_owned())),
-                args: vec![Node::leaf(Token::stub(TokenPayload::Int32(42)))],
+                root: DenseToken::stub(TokenPayload::Ident("stdout".to_owned())),
+                args: vec![Node::leaf(DenseToken::stub(TokenPayload::Integer(42)))],
             }],
         };
 
@@ -247,7 +248,7 @@ mod specs {
                 "stdout".to_string() => Declaration::function(Type::Void, vec![Type::Int32], true)
             },
         };
-        let actual = export(&context, input);
+        let actual = compile(&context, input);
         assert!(actual.is_ok());
         let actual = actual.unwrap();
         let expected = vec![PushInt32(42), StdOut];
@@ -258,14 +259,14 @@ mod specs {
 
     #[test]
     fn operator_simple() {
-        let input = Ast {
+        let input = DenseAst {
             statements: vec![Node {
-                root: Token::stub(TokenPayload::Ident("stdout".to_owned())),
+                root: DenseToken::stub(TokenPayload::Ident("stdout".to_owned())),
                 args: vec![Node {
-                    root: Token::stub(TokenPayload::Add),
+                    root: DenseToken::stub(TokenPayload::Add),
                     args: vec![
-                        Node::leaf(Token::stub(TokenPayload::Int32(3))),
-                        Node::leaf(Token::stub(TokenPayload::Int32(5))),
+                        Node::leaf(DenseToken::stub(TokenPayload::Integer(3))),
+                        Node::leaf(DenseToken::stub(TokenPayload::Integer(5))),
                     ],
                 }],
             }],
@@ -275,7 +276,7 @@ mod specs {
                 "stdout".to_string() => Declaration::function(Type::Void, vec![Type::Int32], true)
             },
         };
-        let actual = export(&context, input);
+        let actual = compile(&context, input);
         assert!(actual.is_ok());
         let actual = actual.unwrap();
         let expected = vec![
@@ -291,42 +292,42 @@ mod specs {
 
     #[test]
     fn milestone_4_main() {
-        let input = Ast {
+        let input = DenseAst {
             statements: vec![
                 Node {
-                    root: Token::stub(DefineLocal),
+                    root: DenseToken::stub(DefineLocal),
                     args: vec![
-                        Node::leaf(Token::stub(Ident("a".to_string()))),
-                        Node::leaf(Token::stub(Int32(3))),
+                        Node::leaf(DenseToken::stub(Ident("a".to_string()))),
+                        Node::leaf(DenseToken::stub(Integer(3))),
                     ],
                 },
                 Node {
-                    root: Token::stub(DefineLocal),
+                    root: DenseToken::stub(DefineLocal),
                     args: vec![
-                        Node::leaf(Token::stub(Ident("b".to_string()))),
+                        Node::leaf(DenseToken::stub(Ident("b".to_string()))),
                         Node {
-                            root: Token::stub(TokenPayload::Add),
+                            root: DenseToken::stub(TokenPayload::Add),
                             args: vec![
-                                Node::leaf(Token::stub(Ident("a".to_string()))),
-                                Node::leaf(Token::stub(Int32(5))),
+                                Node::leaf(DenseToken::stub(Ident("a".to_string()))),
+                                Node::leaf(DenseToken::stub(Integer(5))),
                             ],
                         },
                     ],
                 },
                 Node {
-                    root: Token::stub(DefineLocal),
+                    root: DenseToken::stub(DefineLocal),
                     args: vec![
-                        Node::leaf(Token::stub(Ident("c".to_string()))),
-                        Node::leaf(Token::stub(Int32(7))),
+                        Node::leaf(DenseToken::stub(Ident("c".to_string()))),
+                        Node::leaf(DenseToken::stub(Integer(7))),
                     ],
                 },
                 Node {
-                    root: Token::stub(Ident("stdout".to_string())),
+                    root: DenseToken::stub(Ident("stdout".to_string())),
                     args: vec![Node {
-                        root: Token::stub(Ident("max".to_string())),
+                        root: DenseToken::stub(Ident("max".to_string())),
                         args: vec![
-                            Node::leaf(Token::stub(Ident("b".to_string()))),
-                            Node::leaf(Token::stub(Ident("c".to_string()))),
+                            Node::leaf(DenseToken::stub(Ident("b".to_string()))),
+                            Node::leaf(DenseToken::stub(Ident("c".to_string()))),
                         ],
                     }],
                 },
@@ -343,7 +344,7 @@ mod specs {
             },
         };
 
-        let actual = export(&context, input);
+        let actual = compile(&context, input);
 
         assert!(actual.is_ok());
         let actual = actual.unwrap();
@@ -370,36 +371,36 @@ mod specs {
 
     #[test]
     fn milestone_5_explicit_cast() {
-        let input = Ast {
+        let input = DenseAst {
             statements: vec![
                 Node {
-                    root: Token::stub(DefineLocal),
+                    root: DenseToken::stub(DefineLocal),
                     args: vec![
-                        Node::leaf(Token::stub(Ident("a".to_string()))),
-                        Node::leaf(Token::stub(Ident("i32".to_string()))),
-                        Node::leaf(Token::stub(Int32(3))),
+                        Node::leaf(DenseToken::stub(Ident("a".to_string()))),
+                        Node::leaf(DenseToken::stub(Ident("i32".to_string()))),
+                        Node::leaf(DenseToken::stub(Integer(3))),
                     ],
                 },
                 Node {
-                    root: Token::stub(DefineLocal),
+                    root: DenseToken::stub(DefineLocal),
                     args: vec![
-                        Node::leaf(Token::stub(Ident("b".to_string()))),
-                        Node::leaf(Token::stub(Ident("i8".to_string()))),
+                        Node::leaf(DenseToken::stub(Ident("b".to_string()))),
+                        Node::leaf(DenseToken::stub(Ident("i8".to_string()))),
                         Node {
-                            root: Token::stub(TokenPayload::Add),
+                            root: DenseToken::stub(TokenPayload::Add),
                             args: vec![
                                 Node {
-                                    root: Token::stub(Cast),
+                                    root: DenseToken::stub(Cast),
                                     args: vec![
-                                        Node::leaf(Token::stub(Ident("a".to_string()))),
-                                        Node::leaf(Token::stub(Ident("i8".to_string()))),
+                                        Node::leaf(DenseToken::stub(Ident("a".to_string()))),
+                                        Node::leaf(DenseToken::stub(Ident("i8".to_string()))),
                                     ],
                                 },
                                 Node {
-                                    root: Token::stub(Cast),
+                                    root: DenseToken::stub(Cast),
                                     args: vec![
-                                        Node::leaf(Token::stub(Int32(5))),
-                                        Node::leaf(Token::stub(Ident("i8".to_string()))),
+                                        Node::leaf(DenseToken::stub(Integer(5))),
+                                        Node::leaf(DenseToken::stub(Ident("i8".to_string()))),
                                     ],
                                 },
                             ],
@@ -407,26 +408,26 @@ mod specs {
                     ],
                 },
                 Node {
-                    root: Token::stub(DefineLocal),
+                    root: DenseToken::stub(DefineLocal),
                     args: vec![
-                        Node::leaf(Token::stub(Ident("c".to_string()))),
-                        Node::leaf(Token::stub(Ident("i8".to_string()))),
+                        Node::leaf(DenseToken::stub(Ident("c".to_string()))),
+                        Node::leaf(DenseToken::stub(Ident("i8".to_string()))),
                         Node {
-                            root: Token::stub(Cast),
+                            root: DenseToken::stub(Cast),
                             args: vec![
-                                Node::leaf(Token::stub(Int32(7))),
-                                Node::leaf(Token::stub(Ident("i8".to_string()))),
+                                Node::leaf(DenseToken::stub(Integer(7))),
+                                Node::leaf(DenseToken::stub(Ident("i8".to_string()))),
                             ],
                         },
                     ],
                 },
                 Node {
-                    root: Token::stub(Ident("stdout".to_string())),
+                    root: DenseToken::stub(Ident("stdout".to_string())),
                     args: vec![Node {
-                        root: Token::stub(Ident("max".to_string())),
+                        root: DenseToken::stub(Ident("max".to_string())),
                         args: vec![
-                            Node::leaf(Token::stub(Ident("b".to_string()))),
-                            Node::leaf(Token::stub(Ident("c".to_string()))),
+                            Node::leaf(DenseToken::stub(Ident("b".to_string()))),
+                            Node::leaf(DenseToken::stub(Ident("c".to_string()))),
                         ],
                     }],
                 },
@@ -443,7 +444,7 @@ mod specs {
             },
         };
 
-        let actual = export(&context, input);
+        let actual = compile(&context, input);
         assert!(actual.is_ok());
         let actual = actual.unwrap();
 
@@ -476,51 +477,51 @@ mod specs {
 
     #[test]
     fn milestone_5_main() {
-        let input = Ast {
+        let input = DenseAst {
             statements: vec![
                 Node {
-                    root: Token::stub(DefineLocal),
+                    root: DenseToken::stub(DefineLocal),
                     args: vec![
-                        Node::leaf(Token::stub(Ident("a".to_string()))),
-                        Node::leaf(Token::stub(Ident("i32".to_string()))),
-                        Node::leaf(Token::stub(Int32(3))),
+                        Node::leaf(DenseToken::stub(Ident("a".to_string()))),
+                        Node::leaf(DenseToken::stub(Ident("i32".to_string()))),
+                        Node::leaf(DenseToken::stub(Integer(3))),
                     ],
                 },
                 Node {
-                    root: Token::stub(DefineLocal),
+                    root: DenseToken::stub(DefineLocal),
                     args: vec![
-                        Node::leaf(Token::stub(Ident("b".to_string()))),
-                        Node::leaf(Token::stub(Ident("i8".to_string()))),
+                        Node::leaf(DenseToken::stub(Ident("b".to_string()))),
+                        Node::leaf(DenseToken::stub(Ident("i8".to_string()))),
                         Node {
-                            root: Token::stub(TokenPayload::Add),
+                            root: DenseToken::stub(TokenPayload::Add),
                             args: vec![
                                 Node {
-                                    root: Token::stub(Cast),
+                                    root: DenseToken::stub(Cast),
                                     args: vec![
-                                        Node::leaf(Token::stub(Ident("a".to_string()))),
-                                        Node::leaf(Token::stub(Ident("i8".to_string()))),
+                                        Node::leaf(DenseToken::stub(Ident("a".to_string()))),
+                                        Node::leaf(DenseToken::stub(Ident("i8".to_string()))),
                                     ],
                                 },
-                                Node::leaf(Token::stub(Int32(5))),
+                                Node::leaf(DenseToken::stub(Integer(5))),
                             ],
                         },
                     ],
                 },
                 Node {
-                    root: Token::stub(DefineLocal),
+                    root: DenseToken::stub(DefineLocal),
                     args: vec![
-                        Node::leaf(Token::stub(Ident("c".to_string()))),
-                        Node::leaf(Token::stub(Ident("i8".to_string()))),
-                        Node::leaf(Token::stub(Int32(7))),
+                        Node::leaf(DenseToken::stub(Ident("c".to_string()))),
+                        Node::leaf(DenseToken::stub(Ident("i8".to_string()))),
+                        Node::leaf(DenseToken::stub(Integer(7))),
                     ],
                 },
                 Node {
-                    root: Token::stub(Ident("stdout".to_string())),
+                    root: DenseToken::stub(Ident("stdout".to_string())),
                     args: vec![Node {
-                        root: Token::stub(Ident("max".to_string())),
+                        root: DenseToken::stub(Ident("max".to_string())),
                         args: vec![
-                            Node::leaf(Token::stub(Ident("b".to_string()))),
-                            Node::leaf(Token::stub(Ident("c".to_string()))),
+                            Node::leaf(DenseToken::stub(Ident("b".to_string()))),
+                            Node::leaf(DenseToken::stub(Ident("c".to_string()))),
                         ],
                     }],
                 },
@@ -537,7 +538,7 @@ mod specs {
             },
         };
 
-        let actual = export(&context, input);
+        let actual = compile(&context, input);
         // assert!(actual.is_ok());
         if let Err(error) = actual {
             error.print("test");

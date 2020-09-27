@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::fmt;
 
-use core::{ByteCode, CompilerError, Type};
+use core::{ByteCode, CompilerError, declaration::Type};
 
 mod buildins;
 

@@ -1,7 +1,6 @@
 
 [![build status](https://travis-ci.org/lochbrunner/chop-compiler.svg?branch=master)](https://travis-ci.org/lochbrunner/chop-compiler)
-[![dependency status](https://deps.rs/repo/github/lochbrunner/chop-compiler/status.svg)](https://deps.rs/repo/github/lochbrunner/chop-compiler)
-[![Coverage Status](https://coveralls.io/repos/github/lochbrunner/chop-compiler/badge.svg?branch=master)](https://coveralls.io/github/lochbrunner/chop-compiler?branch=master)
+[![GitHub Actions status](https://github.com/lochbrunner/chop-compiler/workflows/test/badge.svg)](https://github.com/lochbrunner/chop-compiler/actions?workflow=test)
 
 
 # Reference implementation for chop-lang
@@ -12,7 +11,7 @@ This is a reference implementation of [Chop Language](https://github.com/lochbru
 ## Prerequisites
 
 * [Rust](https://www.rust-lang.org/)
-* LLVM Tools
+* LLVM Tools (Install with `sudo apt install llvm-dev`)
 
 ```bash
 sudo apt install libpython2.7 libxml2 clang
@@ -48,9 +47,9 @@ cchop <code filename> -o <output filename>
 1. [Mathematical operations and build-in functions](./milestones/3) :heavy_check_mark:
 1. [Variables](./milestones/4) :heavy_check_mark:
 1. [Primitive Types](./milestones/5)
-1. [Objects] (./milestones/6)
-1. [Functions] (./milestones/7)
-1. [Code generation from intermediate steps](./milestone/8)
+1. [Objects](./milestones/6)
+1. [Functions](./milestones/7)
+1. [Code generation from intermediate steps](./milestones/8)
 1. Enums
 1. Control flow
 1. Caching
@@ -64,3 +63,6 @@ cchop <code filename> -o <output filename>
 
 * Rewrite compiler and interpreter in chop.
 * Adjust and extend the language specs with findings on that way.
+
+...
+Finally solve some of [Graydon Hoare's problems](https://graydon2.dreamwidth.org/253769.html)

@@ -1,4 +1,4 @@
-static MIN_DEF: &'static str = "
+static MIN_DEF: &str = "
 ; Function Attrs: noinline nounwind optnone uwtable
 define dso_local i32 @min(i32, i32) #0 {
   %3 = alloca i32, align 4
@@ -25,7 +25,7 @@ define dso_local i32 @min(i32, i32) #0 {
 
 ";
 
-static MAX_DEF: &'static str = "
+static MAX_DEF: &str = "
 ; Function Attrs: noinline nounwind optnone uwtable
 define dso_local i32 @max(i32, i32) #0 {
   %3 = alloca i32, align 4
@@ -52,9 +52,9 @@ define dso_local i32 @max(i32, i32) #0 {
 ";
 
 pub fn write_min_function(code: &mut String) {
-    code.push_str(MIN_DEF);
+  code.push_str(MIN_DEF);
 }
 
 pub fn write_max_function(code: &mut String) {
-    code.push_str(MAX_DEF);
+  code.push_str(MAX_DEF);
 }

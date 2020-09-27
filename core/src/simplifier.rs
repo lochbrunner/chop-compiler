@@ -1,15 +1,15 @@
-use crate::ast::Ast;
+use crate::ast::{Ast, SparseToken, AstTokenPayload};
 use crate::token::{Token, TokenPayload};
 use crate::CompilerError;
 
-type Node = crate::ast::Node<Token>;
+type Node = crate::ast::Node<SparseToken>;
 
 fn get2_int32(args: &[Node]) -> Option<(i32, i32)> {
     if args.len() != 2 {
         None
     } else {
-        let a = &args.get(0).unwrap().root.token;
-        let b = &args.get(1).unwrap().root.token;
+        let a = &args.get(0).unwrap().root.payload;
+        let b = &args.get(1).unwrap().root.payload;
         match a {
             TokenPayload::Int32(va) => match b {
                 TokenPayload::Int32(vb) => Some((*va, *vb)),
@@ -22,7 +22,7 @@ fn get2_int32(args: &[Node]) -> Option<(i32, i32)> {
 
 fn simplify_node(node: Node) -> Result<Node, CompilerError> {
     let Node {
-        root: Token { token, loc },
+        root: SparseToken { payload, loc, return_type },
         args,
     } = node;
     let args = args
@@ -31,7 +31,7 @@ fn simplify_node(node: Node) -> Result<Node, CompilerError> {
         .collect::<Result<Vec<_>, CompilerError>>()?;
 
     let is_int32 = args.iter().any(|arg| {
-        if let TokenPayload::Int32(_) = arg.root.token {
+        if let AstTokenPayload::Integer = arg.root.payload {
             false
         } else {
             true
@@ -40,37 +40,37 @@ fn simplify_node(node: Node) -> Result<Node, CompilerError> {
 
     if is_int32 {
         return Ok(Node {
-            root: Token { token, loc },
+            root: SparseToken { payload, loc, return_type },
             args,
         });
     }
-    match token {
-        TokenPayload::Add
-        | TokenPayload::Subtract
-        | TokenPayload::Multiply
-        | TokenPayload::Divide
-        | TokenPayload::Remainder => match get2_int32(&args) {
+    match payload {
+        AstTokenPayload::Add
+        | AstTokenPayload::Subtract
+        | AstTokenPayload::Multiply
+        | AstTokenPayload::Divide
+        | AstTokenPayload::Remainder => match get2_int32(&args) {
             None => Ok(Node {
-                root: Token { token, loc },
+                root: SparseToken { payload, loc, return_type },
                 args,
             }),
             Some((a, b)) => {
-                let token = match token {
-                    TokenPayload::Add => TokenPayload::Int32(a + b),
-                    TokenPayload::Subtract => TokenPayload::Int32(a - b),
-                    TokenPayload::Multiply => TokenPayload::Int32(a * b),
-                    TokenPayload::Divide => TokenPayload::Int32(a / b),
-                    TokenPayload::Remainder => TokenPayload::Int32(a % b),
-                    _ => token,
+                let payload = match payload {
+                    AstTokenPayload::Add => AstTokenPayload::Int32(a + b),
+                    AstTokenPayload::Subtract => AstTokenPayload::Int32(a - b),
+                    AstTokenPayload::Multiply => AstTokenPayload::Int32(a * b),
+                    AstTokenPayload::Divide => AstTokenPayload::Int32(a / b),
+                    AstTokenPayload::Remainder => AstTokenPayload::Int32(a % b),
+                    _ => payload,
                 };
                 Ok(Node {
-                    root: Token { token, loc },
+                    root: SparseToken { payload, loc, return_type },
                     args: vec![],
                 })
             }
         },
         _ => Ok(Node {
-            root: Token { token, loc },
+            root: SparseToken { payload, loc, return_type },
             args,
         }),
     }
@@ -91,28 +91,28 @@ pub fn simplify(ast: Ast) -> Result<Ast, CompilerError> {
 mod specs {
     use super::*;
     use crate::token::TokenPayload::*;
-
+    
     #[test]
     fn flat_operator() {
         let input = Ast {
             statements: vec![Node {
-                root: Token::stub(Ident("stdout".to_string())),
+                root: SparseToken::stub(Ident("stdout".to_string())),
                 args: vec![Node {
-                    root: Token::stub(Add),
+                    root: SparseToken::stub(Add),
                     args: vec![
                         Node {
-                            root: Token::stub(Int32(3)),
+                            root: SparseToken::stub(Int32(3)),
                             args: vec![],
                         },
                         Node {
-                            root: Token::stub(Multiply),
+                            root: SparseToken::stub(Multiply),
                             args: vec![
                                 Node {
-                                    root: Token::stub(Int32(5)),
+                                    root: SparseToken::stub(Int32(5)),
                                     args: vec![],
                                 },
                                 Node {
-                                    root: Token::stub(Int32(7)),
+                                    root: SparseToken::stub(Int32(7)),
                                     args: vec![],
                                 },
                             ],
@@ -129,9 +129,9 @@ mod specs {
 
         let expected = Ast {
             statements: vec![Node {
-                root: Token::stub(Ident("stdout".to_string())),
+                root: SparseToken::stub(Ident("stdout".to_string())),
                 args: vec![Node {
-                    root: Token::stub(Int32(38)),
+                    root: SparseToken::stub(Int32(38)),
                     args: vec![],
                 }],
             }],

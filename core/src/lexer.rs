@@ -1,4 +1,5 @@
-use crate::token::{Location, Token, TokenPayload};
+use crate::error::Location;
+use crate::token::{Token, TokenPayload};
 use crate::CompilerError;
 use nom::{
   branch::alt,
@@ -99,10 +100,13 @@ fn parse_integer(code: Span) -> IResult<Span, TokenPayload> {
     return Err(nom::Err::Error((code, ErrorKind::IsNot)));
   }
   let (code, slice) = take_while(move |c| chars.contains(c))(code)?;
-  match slice.fragment.parse::<i32>() {
+  match slice.fragment.parse::<i64>() {
     Ok(value) => set_accept_literal(
       false,
-      Ok((code, TokenPayload::Int32(if sign { -value } else { value }))),
+      Ok((
+        code,
+        TokenPayload::Integer(if sign { -value } else { value }),
+      )),
     ),
     Err(_) => Err(nom::Err::Error((code, ErrorKind::Tag))),
   }
@@ -289,7 +293,7 @@ mod specs {
 
     let expected = vec![
       Token {
-        token: TokenPayload::Int32(42),
+        token: TokenPayload::Integer(42),
         loc: Location {
           line: 3,
           begin: 28,
@@ -340,7 +344,7 @@ mod specs {
         },
       },
       Token {
-        token: TokenPayload::Int32(42),
+        token: TokenPayload::Integer(42),
         loc: Location {
           line: 1,
           begin: 7,
@@ -376,7 +380,7 @@ mod specs {
         },
       },
       Token {
-        token: TokenPayload::Int32(42),
+        token: TokenPayload::Integer(42),
         loc: Location {
           line: 1,
           begin: 7,
@@ -403,9 +407,9 @@ mod specs {
       Ident("stdout".to_string()),
       Ident("max".to_string()),
       ParenthesesL,
-      Int32(3),
+      Integer(3),
       Delimiter,
-      Int32(5),
+      Integer(5),
       ParenthesesR,
     ];
 
@@ -449,7 +453,7 @@ mod specs {
         },
       },
       Token {
-        token: Int32(3),
+        token: Integer(3),
         loc: Location {
           line: 3,
           begin: 39,
@@ -465,7 +469,7 @@ mod specs {
         },
       },
       Token {
-        token: Int32(5),
+        token: Integer(5),
         loc: Location {
           line: 3,
           begin: 41,
@@ -481,7 +485,7 @@ mod specs {
         },
       },
       Token {
-        token: Int32(-7),
+        token: Integer(-7),
         loc: Location {
           line: 3,
           begin: 43,
@@ -497,7 +501,7 @@ mod specs {
         },
       },
       Token {
-        token: Int32(11),
+        token: Integer(11),
         loc: Location {
           line: 3,
           begin: 47,
@@ -513,7 +517,7 @@ mod specs {
         },
       },
       Token {
-        token: Int32(13),
+        token: Integer(13),
         loc: Location {
           line: 3,
           begin: 50,
@@ -529,7 +533,7 @@ mod specs {
         },
       },
       Token {
-        token: Int32(15),
+        token: Integer(15),
         loc: Location {
           line: 3,
           begin: 53,
@@ -568,15 +572,15 @@ mod specs {
     let expected = vec![
       Ident("a".to_string()),
       DefineLocal,
-      Int32(3),
+      Integer(3),
       Ident("b".to_string()),
       DefineLocal,
       Ident("a".to_string()),
       Add,
-      Int32(5),
+      Integer(5),
       Ident("c".to_string()),
       DefineLocal,
-      Int32(7),
+      Integer(7),
       Ident("stdout".to_string()),
       Ident("max".to_string()),
       ParenthesesL,
@@ -610,7 +614,7 @@ mod specs {
       TypeDeclaration,
       Ident("i32".to_string()),
       DefineLocal,
-      Int32(3),
+      Integer(3),
       Ident("b".to_string()),
       TypeDeclaration,
       Ident("i8".to_string()),
@@ -619,12 +623,12 @@ mod specs {
       Cast,
       Ident("i8".to_string()),
       Add,
-      Int32(5),
+      Integer(5),
       Ident("c".to_string()),
       TypeDeclaration,
       Ident("i8".to_string()),
       DefineLocal,
-      Int32(7),
+      Integer(7),
       Ident("stdout".to_string()),
       Ident("max".to_string()),
       ParenthesesL,

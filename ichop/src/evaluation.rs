@@ -1,4 +1,4 @@
-use core::{bytecode::ByteCode, Type};
+use core::{bytecode::ByteCode, declaration::Type};
 use std::cmp::{max, min};
 use std::io::Write;
 

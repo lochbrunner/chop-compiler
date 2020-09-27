@@ -1,5 +1,7 @@
 #!/bin/bash
 
+PATH=$PATH:$PWD/target/release
+
 NC='\033[0m'
 GREEN='\033[0;32m'
 RED='\033[0;31m'
@@ -9,6 +11,8 @@ MILESTONES_DIR=$(dirname $0)
 FAILED=0
 
 CASES=($(ls ./milestones/*/*.ch))
+
+errors=()
 
 printf "Testing interpeter\n"
 for CASE in "${CASES[@]}"; do
@@ -22,6 +26,7 @@ for CASE in "${CASES[@]}"; do
     elif test "$actual" != "$expected" ;then
         let "FAILED++"
         printf "${RED} failed!$NC\n"
+        errors+="Interpeter $CASE\n Expteced: \"$expected\" got \"$actual\""
     else
         printf "${GREEN} ok$NC\n"
     fi
@@ -38,6 +43,7 @@ for CASE in "${CASES[@]}"; do
     elif test "$actual" != "$expected" ;then
         let "FAILED++"
         printf "${RED}failed!$NC\n"
+        errors+="Compiler $CASE Expteced: \"$expected\" got \"$actual\""
     else
         printf "${GREEN}ok$NC\n"
     fi
@@ -49,5 +55,8 @@ if test "$FAILED" -eq "0"; then
     exit 0
 else
     echo -e "${RED}$FAILED milestones tests failed!$NC"
+    for error in ${errors[@]}; do
+        echo $error
+    done
     exit 1
 fi

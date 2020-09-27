@@ -11,6 +11,7 @@
         "nounwind",
         "optnone",
         "printf",
+        "specializer",
         "uwtable",
         "wchar"
     ]
