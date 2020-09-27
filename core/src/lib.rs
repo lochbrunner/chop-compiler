@@ -7,7 +7,7 @@ mod error;
 mod generator;
 mod lexer;
 mod parser;
-// mod simplifier;
+mod simplifier;
 mod specializer;
 pub mod token;
 use declaration::{Context, Declaration};
@@ -32,7 +32,7 @@ pub fn build(code: &str) -> Result<Vec<ByteCode>, CompilerError> {
     let ast = parser::parse(&mut context, &tokens)?;
     let ast = generator::generate_sparse(ast)?;
     let ast = specializer::specialize(ast)?;
-    // let simple = simplifier::simplify(ast)?;
+    let ast = simplifier::simplify(ast)?;
     // TODO: cache
     bytecode::compile(&context, ast)
 }

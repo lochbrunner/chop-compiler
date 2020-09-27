@@ -1,8 +1,8 @@
-use crate::ast::{Ast, SparseToken, AstTokenPayload};
-use crate::token::{Token, TokenPayload};
+use crate::ast::IntegerProvider;
+use crate::ast::{Ast, AstTokenPayload, DenseAst, DenseToken};
 use crate::CompilerError;
 
-type Node = crate::ast::Node<SparseToken>;
+type Node = crate::ast::Node<DenseToken>;
 
 fn get2_int32(args: &[Node]) -> Option<(i32, i32)> {
     if args.len() != 2 {
@@ -11,8 +11,8 @@ fn get2_int32(args: &[Node]) -> Option<(i32, i32)> {
         let a = &args.get(0).unwrap().root.payload;
         let b = &args.get(1).unwrap().root.payload;
         match a {
-            TokenPayload::Int32(va) => match b {
-                TokenPayload::Int32(vb) => Some((*va, *vb)),
+            AstTokenPayload::Integer(va) => match b {
+                AstTokenPayload::Integer(vb) => Some((va.content as i32, vb.content as i32)),
                 _ => None,
             },
             _ => None,
@@ -22,7 +22,11 @@ fn get2_int32(args: &[Node]) -> Option<(i32, i32)> {
 
 fn simplify_node(node: Node) -> Result<Node, CompilerError> {
     let Node {
-        root: SparseToken { payload, loc, return_type },
+        root: DenseToken {
+            payload,
+            loc,
+            return_type,
+        },
         args,
     } = node;
     let args = args
@@ -31,7 +35,7 @@ fn simplify_node(node: Node) -> Result<Node, CompilerError> {
         .collect::<Result<Vec<_>, CompilerError>>()?;
 
     let is_int32 = args.iter().any(|arg| {
-        if let AstTokenPayload::Integer = arg.root.payload {
+        if let AstTokenPayload::Integer(_) = arg.root.payload {
             false
         } else {
             true
@@ -40,7 +44,11 @@ fn simplify_node(node: Node) -> Result<Node, CompilerError> {
 
     if is_int32 {
         return Ok(Node {
-            root: SparseToken { payload, loc, return_type },
+            root: DenseToken {
+                payload,
+                loc,
+                return_type,
+            },
             args,
         });
     }
@@ -51,33 +59,55 @@ fn simplify_node(node: Node) -> Result<Node, CompilerError> {
         | AstTokenPayload::Divide
         | AstTokenPayload::Remainder => match get2_int32(&args) {
             None => Ok(Node {
-                root: SparseToken { payload, loc, return_type },
+                root: DenseToken {
+                    payload,
+                    loc,
+                    return_type,
+                },
                 args,
             }),
             Some((a, b)) => {
                 let payload = match payload {
-                    AstTokenPayload::Add => AstTokenPayload::Int32(a + b),
-                    AstTokenPayload::Subtract => AstTokenPayload::Int32(a - b),
-                    AstTokenPayload::Multiply => AstTokenPayload::Int32(a * b),
-                    AstTokenPayload::Divide => AstTokenPayload::Int32(a / b),
-                    AstTokenPayload::Remainder => AstTokenPayload::Int32(a % b),
+                    AstTokenPayload::Add => AstTokenPayload::Integer(IntegerProvider {
+                        content: (a + b) as i64,
+                    }),
+                    AstTokenPayload::Subtract => AstTokenPayload::Integer(IntegerProvider {
+                        content: (a - b) as i64,
+                    }),
+                    AstTokenPayload::Multiply => AstTokenPayload::Integer(IntegerProvider {
+                        content: (a * b) as i64,
+                    }),
+                    AstTokenPayload::Divide => AstTokenPayload::Integer(IntegerProvider {
+                        content: (a / b) as i64,
+                    }),
+                    AstTokenPayload::Remainder => AstTokenPayload::Integer(IntegerProvider {
+                        content: (a % b) as i64,
+                    }),
                     _ => payload,
                 };
                 Ok(Node {
-                    root: SparseToken { payload, loc, return_type },
+                    root: DenseToken {
+                        payload,
+                        loc,
+                        return_type,
+                    },
                     args: vec![],
                 })
             }
         },
         _ => Ok(Node {
-            root: SparseToken { payload, loc, return_type },
+            root: DenseToken {
+                payload,
+                loc,
+                return_type,
+            },
             args,
         }),
     }
 }
 
 /// Simplifies constant expressions like 3+5
-pub fn simplify(ast: Ast) -> Result<Ast, CompilerError> {
+pub fn simplify(ast: DenseAst) -> Result<DenseAst, CompilerError> {
     Ok(Ast {
         statements: ast
             .statements
@@ -90,29 +120,37 @@ pub fn simplify(ast: Ast) -> Result<Ast, CompilerError> {
 #[cfg(test)]
 mod specs {
     use super::*;
-    use crate::token::TokenPayload::*;
-    
+    use crate::ast::AstTokenPayload;
+    use crate::ast::AstTokenPayloadStub;
+    // use crate::token::TokenPayload;
+
+    fn create_int(value: i32) -> AstTokenPayload {
+        AstTokenPayload::Integer(IntegerProvider {
+            content: value as i64,
+        })
+    }
+
     #[test]
     fn flat_operator() {
         let input = Ast {
             statements: vec![Node {
-                root: SparseToken::stub(Ident("stdout".to_string())),
+                root: DenseToken::stub(AstTokenPayload::Symbol("stdout".to_string())),
                 args: vec![Node {
-                    root: SparseToken::stub(Add),
+                    root: DenseToken::stub(AstTokenPayload::Add),
                     args: vec![
                         Node {
-                            root: SparseToken::stub(Int32(3)),
+                            root: DenseToken::stub(create_int(3)),
                             args: vec![],
                         },
                         Node {
-                            root: SparseToken::stub(Multiply),
+                            root: DenseToken::stub(AstTokenPayload::Multiply),
                             args: vec![
                                 Node {
-                                    root: SparseToken::stub(Int32(5)),
+                                    root: DenseToken::stub(create_int(5)),
                                     args: vec![],
                                 },
                                 Node {
-                                    root: SparseToken::stub(Int32(7)),
+                                    root: DenseToken::stub(create_int(7)),
                                     args: vec![],
                                 },
                             ],
@@ -129,9 +167,9 @@ mod specs {
 
         let expected = Ast {
             statements: vec![Node {
-                root: SparseToken::stub(Ident("stdout".to_string())),
+                root: DenseToken::stub(AstTokenPayload::Symbol("stdout".to_string())),
                 args: vec![Node {
-                    root: SparseToken::stub(Int32(38)),
+                    root: DenseToken::stub(create_int(38)),
                     args: vec![],
                 }],
             }],

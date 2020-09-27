@@ -36,10 +36,15 @@ printf "\nTesting compiler\n"
 for CASE in "${CASES[@]}"; do
     printf "test $CASE ... "
     expected=$(cat "${CASE%.*}".out)
-    cchop $CASE -o build/main && actual=$(build/main)
+    cchop $CASE -o build/main
     if test "$?" -ne "0"; then
         let "FAILED++"
-        echo -e "${RED}crashed!$NC"
+        echo -e "${RED}cchop crashed!$NC"
+    fi
+    actual=$(build/main)
+    if test "$?" -ne "0"; then
+        let "FAILED++"
+        echo -e "${RED}executable crashed!$NC"
     elif test "$actual" != "$expected" ;then
         let "FAILED++"
         printf "${RED}failed!$NC\n"

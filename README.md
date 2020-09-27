@@ -1,6 +1,7 @@
 
 [![build status](https://travis-ci.org/lochbrunner/chop-compiler.svg?branch=master)](https://travis-ci.org/lochbrunner/chop-compiler)
 [![GitHub Actions status](https://github.com/lochbrunner/chop-compiler/workflows/test/badge.svg)](https://github.com/lochbrunner/chop-compiler/actions?workflow=test)
+[![GitHub Actions status](https://github.com/lochbrunner/chop-compiler/workflows/milestones/badge.svg)](https://github.com/lochbrunner/chop-compiler/actions?workflow=milestones)
 
 
 # Reference implementation for chop-lang
@@ -11,10 +12,10 @@ This is a reference implementation of [Chop Language](https://github.com/lochbru
 ## Prerequisites
 
 * [Rust](https://www.rust-lang.org/)
-* LLVM Tools (Install with `sudo apt install llvm-dev`)
+* LLVM Tools
 
 ```bash
-sudo apt install libpython2.7 libxml2 clang
+sudo apt install libpython2.7 libxml2 clang llvm-dev
 ```
 
 ## Setup

@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::fmt;
 
-use core::{ByteCode, CompilerError, declaration::Type};
+use core::{declaration::Type, ByteCode, CompilerError};
 
 mod buildins;
 
@@ -169,8 +169,8 @@ fn operator(
     let a = get_last_item_rep_gen(stack)?;
     code.push_str(&format!(
         "  %{} = {} nsw {} {}, {}\n",
-        operator_name,
         register_counter,
+        operator_name,
         op_type.to_llvm(),
         a,
         b

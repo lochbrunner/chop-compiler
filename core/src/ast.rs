@@ -265,8 +265,4 @@ impl DebugAst {
             statements: DebugAst::move_nodes(ast.statements),
         }
     }
-
-    pub fn from_dense(ast: DenseAst) -> DebugAst {
-        unimplemented!();
-    }
 }
