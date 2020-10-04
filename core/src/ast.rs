@@ -124,7 +124,7 @@ impl AstTokenPayload {
 pub struct SparseToken {
     pub payload: AstTokenPayload,
     // pub return_type: &'a dyn Fn(Option<Type>) -> Option<Type>,
-    pub return_type: Rc<dyn Fn(Option<Type>) -> Option<Type>>,
+    pub return_type: Rc<dyn Fn(Option<Type>) -> Option<Type>>, // Better -> Result<Option<Type>, _>
     // pub static_value: fn() -> Option<>,
     pub loc: Location,
 }

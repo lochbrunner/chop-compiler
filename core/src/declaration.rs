@@ -12,6 +12,7 @@ pub enum Type {
     Int32,
     Int64,
     Void,
+    Type,
 }
 
 impl Type {

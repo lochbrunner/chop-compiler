@@ -62,7 +62,7 @@ where
 //     }
 // }
 
-fn specialize_declaration<'a>(
+fn specialize_declaration(
     args: Vec<SparseNode>,
     loc: Location,
 ) -> Result<DenseNode, CompilerError> {
@@ -70,14 +70,14 @@ fn specialize_declaration<'a>(
         2 => {
             // variable name, value
             let (name, value) = destruct_vector_2(args);
-            let dtype = Some(Type::Int32);
             let args = vec![
                 specialize_node(Some(Type::Void))(name)?,
-                specialize_node(dtype.clone())(value)?,
+                specialize_node(None)(value)?,
             ];
+            let dtype = args[1].root.return_type.clone();
             Ok(DenseNode {
                 root: DenseToken {
-                    payload: AstTokenPayload::DefineLocal(dtype),
+                    payload: AstTokenPayload::DefineLocal(Some(dtype)),
                     loc,
                     return_type: Type::Void,
                 },
@@ -108,10 +108,63 @@ fn specialize_declaration<'a>(
     }
 }
 
+fn specialize_cast(args: Vec<SparseNode>, loc: Location) -> Result<DenseNode, CompilerError> {
+    if args.len() != 2 {
+        Err(loc.to_error(format!(
+            "Expect cast to have two arguments. Got {}",
+            args.len()
+        )))
+    } else {
+        let (value, type_node) = destruct_vector_2(args);
+        let dtype = Type::from_sparse_token(&type_node.root);
+        let args = vec![
+            specialize_node(None)(value)?,
+            specialize_node(Some(Type::Type))(type_node)?,
+        ];
+        Ok(DenseNode {
+            root: DenseToken {
+                payload: AstTokenPayload::Cast,
+                loc,
+                return_type: dtype,
+            },
+            args,
+        })
+    }
+}
+
+pub fn specialize_binary_op(
+    payload: AstTokenPayload,
+    args: Vec<SparseNode>,
+    loc: Location,
+    expected: Option<Type>,
+) -> Result<DenseNode, CompilerError> {
+    if args.len() != 2 {
+        Err(loc.to_error(format!(
+            "Expect cast to have two arguments. Got {}",
+            args.len()
+        )))
+    } else {
+        let (a, b) = destruct_vector_2(args);
+
+        let a = specialize_node(expected)(a)?;
+        let b = specialize_node(Some(a.root.return_type.clone()))(b)?;
+        let dtype = b.root.return_type.clone();
+
+        let args = vec![a, b];
+        Ok(DenseNode {
+            root: DenseToken {
+                payload,
+                loc,
+                return_type: dtype,
+            },
+            args,
+        })
+    }
+}
+
 fn specialize_node<'a>(
     expected: Option<Type>,
 ) -> impl FnMut(SparseNode<'a>) -> Result<DenseNode, CompilerError> {
-    let expected = expected.unwrap_or(Type::Int32);
     move |node| {
         let SparseNode {
             root:
@@ -122,12 +175,20 @@ fn specialize_node<'a>(
                 },
             args,
         } = node;
-
         match &payload {
             AstTokenPayload::DefineLocal(_) => specialize_declaration(args, loc),
+            AstTokenPayload::Cast => specialize_cast(args, loc),
+            AstTokenPayload::Add
+            | AstTokenPayload::Subtract
+            | AstTokenPayload::Multiply
+            | AstTokenPayload::Divide
+            | AstTokenPayload::Remainder => {
+                specialize_binary_op(payload, args, loc, expected.clone())
+            }
             // What are the expected types
             // For now assume each is a Int32
             _ => {
+                let expected = expected.clone().unwrap_or(Type::Int32);
                 let args = args
                     .into_iter()
                     .map(specialize_node(Some(Type::Int32)))
@@ -255,7 +316,71 @@ mod specs {
     }
 
     #[test]
+    fn explicit_cast() {
+        // b := 5 as :8
+        let sparse = SparseAst {
+            statements: vec![Node {
+                root: AstTokenPayloadStub::stub(DefineLocal(None)),
+                args: vec![
+                    Node::leaf(StringStub::stub("b")),
+                    Node {
+                        root: AstTokenPayloadStub::stub(Cast),
+                        args: vec![
+                            Node::leaf(IntegerStub::stub(5)),
+                            Node::leaf(StringStub::stub("i8")),
+                        ],
+                    },
+                ],
+            }],
+        };
+
+        let dense = specialize(sparse);
+        assert!(dense.is_ok());
+        let dense = dense.unwrap();
+
+        let expected = DenseAst {
+            statements: vec![Node {
+                root: DenseToken {
+                    payload: DefineLocal(Some(Type::Int8)),
+                    return_type: Type::Void,
+                    loc: Location::default(),
+                },
+                args: vec![
+                    Node::leaf(DenseToken {
+                        payload: Symbol("b".to_owned()),
+                        return_type: Type::Void,
+                        loc: Location::default(),
+                    }),
+                    Node {
+                        root: DenseToken {
+                            payload: Cast,
+                            return_type: Type::Int8,
+                            loc: Location::default(),
+                        },
+                        args: vec![
+                            Node::leaf(DenseToken {
+                                payload: Integer(IntegerProvider { content: 5 }),
+                                return_type: Type::Int32,
+                                loc: Location::default(),
+                            }),
+                            Node::leaf(DenseToken {
+                                payload: Symbol("i8".to_owned()),
+                                return_type: Type::Type,
+                                loc: Location::default(),
+                            }),
+                        ],
+                    },
+                ],
+            }],
+        };
+
+        assert_eq!(dense, expected);
+    }
+
+    #[test]
     fn milestone_5_line_2() {
+        // b: i8 := a as i8 + 5
+
         let sparse = SparseAst {
             statements: vec![Node {
                 root: AstTokenPayloadStub::stub(DefineLocal(None)),
@@ -268,7 +393,11 @@ mod specs {
                             Node {
                                 root: AstTokenPayloadStub::stub(Cast),
                                 args: vec![
-                                    Node::leaf(StringStub::stub("a")),
+                                    Node::leaf(SparseToken {
+                                        payload: AstTokenPayload::Symbol("a".to_owned()),
+                                        return_type: Rc::new(&|_| Some(Type::Int8)),
+                                        loc: Default::default(),
+                                    }),
                                     Node::leaf(StringStub::stub("i8")),
                                 ],
                             },
@@ -283,49 +412,48 @@ mod specs {
         assert!(dense.is_ok());
         let dense = dense.unwrap();
 
-        dbg!(dense);
-
         let expected = DenseAst {
             statements: vec![Node {
-                root: AstTokenPayloadStub::stub_typed(DefineLocal(None), Type::Void),
+                root: DenseToken {
+                    payload: DefineLocal(Some(Type::Int8)),
+                    return_type: Type::Void,
+                    loc: Location::default(),
+                },
                 args: vec![
-                    Node::leaf(AstTokenPayloadStub::stub_typed(
-                        Symbol("stdout".to_owned()),
-                        Type::Int8,
-                    )),
-                    // Node::leaf(AstTokenPayloadStub::stub_typed(
-                    //     Symbol("i8".to_owned()),
-                    //     Type::Int8,
-                    // )),
+                    Node::leaf(DenseToken {
+                        payload: Symbol("b".to_owned()),
+                        return_type: Type::Void,
+                        loc: Location::default(),
+                    }),
                     Node {
                         root: DenseToken {
                             payload: Add,
-                            return_type: Type::Int32,
+                            return_type: Type::Int8,
                             loc: Location::default(),
                         },
                         args: vec![
                             Node {
                                 root: DenseToken {
                                     payload: Cast,
-                                    return_type: Type::Int32,
+                                    return_type: Type::Int8,
                                     loc: Location::default(),
                                 },
                                 args: vec![
                                     Node::leaf(DenseToken {
                                         payload: Symbol("a".to_owned()),
-                                        return_type: Type::Int32,
+                                        return_type: Type::Int8,
                                         loc: Location::default(),
                                     }),
                                     Node::leaf(DenseToken {
                                         payload: Symbol("i8".to_owned()),
-                                        return_type: Type::Int32,
+                                        return_type: Type::Type,
                                         loc: Location::default(),
                                     }),
                                 ],
                             },
                             Node::leaf(DenseToken {
                                 payload: Integer(IntegerProvider { content: 5 }),
-                                return_type: Type::Int32,
+                                return_type: Type::Int8,
                                 loc: Location::default(),
                             }),
                         ],
@@ -333,5 +461,7 @@ mod specs {
                 ],
             }],
         };
+
+        assert_eq!(dense, expected);
     }
 }

@@ -88,7 +88,7 @@ pub fn evaluate(code: &[ByteCode], writer: &mut dyn Write) -> Result<(), String>
                 Type::Int32 => register.push(StackItem::Int32(0)),
                 Type::Int16 => register.push(StackItem::Int16(0)),
                 Type::Int8 => register.push(StackItem::Int8(0)),
-                Type::Void => (),
+                Type::Void | Type::Type => (),
             }
         }
     }
@@ -103,7 +103,7 @@ pub fn evaluate(code: &[ByteCode], writer: &mut dyn Write) -> Result<(), String>
                     StackItem::Int16(v) => v.to_string(),
                     StackItem::Int32(v) => v.to_string(),
                     StackItem::Int64(v) => v.to_string(),
-                    _ => return Err(format!("Type {:?} is not implemented yet!", v))
+                    _ => return Err(format!("Type {:?} is not implemented yet!", v)),
                 };
                 if let Err(error) = writeln!(writer, "{}", s) {
                     return Err(format!("Error writing to stdout: {}", error));

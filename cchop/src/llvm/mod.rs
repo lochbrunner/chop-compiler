@@ -127,6 +127,7 @@ impl ToLLVM for Type {
             Type::Int32 => "i32",
             Type::Int64 => "i64",
             Type::Void => "void",
+            Type::Type => panic!("Type can not be used as an variable"),
         }
     }
 }
