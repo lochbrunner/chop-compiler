@@ -29,6 +29,15 @@ pub struct Location {
     pub end: usize,
 }
 
+impl Location {
+    pub fn to_error(&self, msg: String) -> CompilerError {
+        CompilerError {
+            location: self.clone(),
+            msg,
+        }
+    }
+}
+
 pub trait Locatable {
     fn get_loc(&self) -> &Location;
 }

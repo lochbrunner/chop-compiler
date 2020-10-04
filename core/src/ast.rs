@@ -3,7 +3,7 @@ use crate::error::{Locatable, Location};
 use std::fmt;
 use std::rc::Rc;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct Node<T> {
     pub root: T,
     pub args: Vec<Node<T>>,
@@ -76,7 +76,7 @@ pub enum AstTokenPayload {
     // Literals
     Integer(IntegerProvider),
     // Statements
-    DefineLocal, // :=
+    DefineLocal(Option<Type>), // :=
     // DefinePublic, // :+
     // Declare,      // :
     Cast, // as
@@ -99,7 +99,7 @@ impl AstTokenPayload {
             TokenPayload::Integer(content) => {
                 Ok(AstTokenPayload::Integer(IntegerProvider { content }))
             }
-            TokenPayload::DefineLocal => Ok(AstTokenPayload::DefineLocal),
+            TokenPayload::DefineLocal => Ok(AstTokenPayload::DefineLocal(None)),
             TokenPayload::Cast => Ok(AstTokenPayload::Cast),
             TokenPayload::Pipe => Ok(AstTokenPayload::Pipe),
             TokenPayload::Multiply => Ok(AstTokenPayload::Multiply),
@@ -129,6 +129,16 @@ pub struct SparseToken {
     pub loc: Location,
 }
 
+impl std::default::Default for SparseToken {
+    fn default() -> Self {
+        Self {
+            payload: AstTokenPayload::Cast,
+            return_type: Rc::new(&|_| None),
+            loc: Location::default(),
+        }
+    }
+}
+
 impl fmt::Debug for SparseToken {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{:?}", self.payload)
@@ -141,11 +151,87 @@ impl PartialEq for SparseToken {
     }
 }
 
-impl SparseToken {
-    pub fn stub(payload: TokenPayload) -> SparseToken {
+pub trait LexerTokenPayloadStub {
+    fn stub_typed(payload: TokenPayload, return_type: Type) -> Self;
+    fn stub(payload: TokenPayload) -> Self;
+}
+
+pub trait AstTokenPayloadStub {
+    fn stub_typed(payload: AstTokenPayload, return_type: Type) -> Self;
+    fn stub(payload: AstTokenPayload) -> Self;
+}
+
+pub trait IntegerStub {
+    fn stub(value: i64) -> Self;
+}
+
+pub trait StringStub {
+    fn stub(text: &str) -> Self;
+}
+
+impl LexerTokenPayloadStub for SparseToken {
+    fn stub(payload: TokenPayload) -> Self {
         SparseToken {
             payload: AstTokenPayload::from(payload).unwrap(),
             return_type: Rc::new(&|_| None),
+            loc: Default::default(),
+        }
+    }
+
+    fn stub_typed(_payload: TokenPayload, _return_type: Type) -> Self {
+        unimplemented!()
+    }
+}
+
+impl AstTokenPayloadStub for SparseToken {
+    fn stub(payload: AstTokenPayload) -> Self {
+        SparseToken {
+            payload,
+            return_type: Rc::new(&|_| None),
+            loc: Default::default(),
+        }
+    }
+
+    fn stub_typed(_payload: AstTokenPayload, _return_type: Type) -> Self {
+        unimplemented!()
+    }
+}
+
+impl StringStub for SparseToken {
+    fn stub(text: &str) -> Self {
+        SparseToken {
+            payload: AstTokenPayload::Symbol(text.to_owned()),
+            return_type: Rc::new(&|_| None),
+            loc: Default::default(),
+        }
+    }
+}
+
+impl IntegerStub for SparseToken {
+    fn stub(value: i64) -> Self {
+        SparseToken {
+            payload: AstTokenPayload::Integer(IntegerProvider { content: value }),
+            return_type: Rc::new(&|_| None),
+            loc: Default::default(),
+        }
+    }
+}
+
+impl StringStub for DenseToken {
+    fn stub(text: &str) -> Self {
+        DenseToken {
+            payload: AstTokenPayload::Symbol(text.to_owned()),
+            return_type: Type::Void,
+            loc: Default::default(),
+        }
+    }
+}
+
+impl IntegerStub for DenseToken {
+    fn stub(value: i64) -> Self {
+        DenseToken {
+            payload: AstTokenPayload::Integer(IntegerProvider { content: value }),
+            return_type: Type::Void,
             loc: Default::default(),
         }
     }
@@ -169,16 +255,6 @@ pub struct DenseToken {
     pub payload: AstTokenPayload,
     pub return_type: Type,
     pub loc: Location,
-}
-
-pub trait LexerTokenPayloadStub {
-    fn stub_typed(payload: TokenPayload, return_type: Type) -> DenseToken;
-    fn stub(payload: TokenPayload) -> DenseToken;
-}
-
-pub trait AstTokenPayloadStub {
-    fn stub_typed(payload: AstTokenPayload, return_type: Type) -> DenseToken;
-    fn stub(payload: AstTokenPayload) -> DenseToken;
 }
 
 impl LexerTokenPayloadStub for DenseToken {

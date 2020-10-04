@@ -190,7 +190,7 @@ fn create_statement<'a>(
             args,
         };
         if op.is_statement {
-            if node.root.payload == AstTokenPayload::DefineLocal {
+            if node.root.payload == AstTokenPayload::DefineLocal(None) {
                 // TODO: First attempt only
                 // Get ident
                 let first_token = &node.args.get(0).unwrap().root.payload;
@@ -434,7 +434,7 @@ pub fn parse(context: &mut Context, tokens: &[Token]) -> Result<SparseAst, Compi
 #[cfg(test)]
 mod specs {
     use super::*;
-    use ast::Node;
+    use ast::{IntegerStub, LexerTokenPayloadStub, Node, StringStub};
     use TokenPayload::*;
     #[test]
     fn milestone_1() {
@@ -456,10 +456,10 @@ mod specs {
 
         let expected = ast::Ast {
             statements: vec![ast::Node {
-                root: SparseToken::stub(Pipe),
+                root: LexerTokenPayloadStub::stub(Pipe),
                 args: vec![
-                    ast::Node::leaf(SparseToken::stub(Integer(42))),
-                    ast::Node::leaf(SparseToken::stub(Ident("stdout".to_string()))),
+                    ast::Node::leaf(IntegerStub::stub(42)),
+                    ast::Node::leaf(StringStub::stub("stdout")),
                 ],
             }],
         };
@@ -489,9 +489,9 @@ mod specs {
 
         let expected = ast::Ast {
             statements: vec![ast::Node {
-                root: SparseToken::stub(Ident("stdout".to_string())),
+                root: StringStub::stub("stdout"),
                 args: vec![ast::Node {
-                    root: SparseToken::stub(Integer(42)),
+                    root: IntegerStub::stub(42),
                     args: vec![],
                 }],
             }],
@@ -519,9 +519,9 @@ mod specs {
         let actual = actual.unwrap();
         let expected = ast::Ast {
             statements: vec![ast::Node {
-                root: SparseToken::stub(Ident("stdout".to_string())),
+                root: StringStub::stub("stdout"),
                 args: vec![ast::Node {
-                    root: SparseToken::stub(Integer(42)),
+                    root: IntegerStub::stub(42),
                     args: vec![],
                 }],
             }],
@@ -592,16 +592,16 @@ mod specs {
 
         let expected = ast::SparseAst {
             statements: vec![Node {
-                root: SparseToken::stub(Ident("stdout".to_string())),
+                root: StringStub::stub("stdout"),
                 args: vec![Node {
-                    root: SparseToken::stub(Add),
+                    root: LexerTokenPayloadStub::stub(Add),
                     args: vec![
-                        Node::leaf(SparseToken::stub(Integer(3))),
+                        Node::leaf(IntegerStub::stub(3)),
                         Node {
-                            root: SparseToken::stub(Multiply),
+                            root: LexerTokenPayloadStub::stub(Multiply),
                             args: vec![
-                                Node::leaf(SparseToken::stub(Integer(5))),
-                                Node::leaf(SparseToken::stub(Integer(7))),
+                                Node::leaf(IntegerStub::stub(5)),
+                                Node::leaf(IntegerStub::stub(7)),
                             ],
                         },
                     ],
@@ -640,18 +640,18 @@ mod specs {
 
         let expected = ast::SparseAst {
             statements: vec![Node {
-                root: SparseToken::stub(Ident("stdout".to_string())),
+                root: StringStub::stub("stdout"),
                 args: vec![Node {
-                    root: SparseToken::stub(Multiply),
+                    root: LexerTokenPayloadStub::stub(Multiply),
                     args: vec![
                         Node {
-                            root: SparseToken::stub(Add),
+                            root: LexerTokenPayloadStub::stub(Add),
                             args: vec![
-                                Node::leaf(SparseToken::stub(Integer(3))),
-                                Node::leaf(SparseToken::stub(Integer(5))),
+                                Node::leaf(IntegerStub::stub(3)),
+                                Node::leaf(IntegerStub::stub(5)),
                             ],
                         },
-                        Node::leaf(SparseToken::stub(Integer(7))),
+                        Node::leaf(IntegerStub::stub(7)),
                     ],
                 }],
             }],
@@ -694,12 +694,12 @@ mod specs {
 
         let expected = ast::SparseAst {
             statements: vec![Node {
-                root: SparseToken::stub(Ident("stdout".to_string())),
+                root: StringStub::stub("stdout"),
                 args: vec![Node {
-                    root: SparseToken::stub(Ident("max".to_string())),
+                    root: StringStub::stub("max"),
                     args: vec![
-                        Node::leaf(SparseToken::stub(Integer(3))),
-                        Node::leaf(SparseToken::stub(Integer(5))),
+                        Node::leaf(IntegerStub::stub(3)),
+                        Node::leaf(IntegerStub::stub(5)),
                     ],
                 }],
             }],
@@ -750,34 +750,34 @@ mod specs {
 
         let expected = SparseAst {
             statements: vec![Node {
-                root: SparseToken::stub(Ident("stdout".to_string())),
+                root: StringStub::stub("stdout"),
                 args: vec![Node {
-                    root: SparseToken::stub(Ident("max".to_string())),
+                    root: StringStub::stub("max"),
                     args: vec![
                         Node {
-                            root: SparseToken::stub(Add),
+                            root: LexerTokenPayloadStub::stub(Add),
                             args: vec![
-                                Node::leaf(SparseToken::stub(Integer(3))),
+                                Node::leaf(IntegerStub::stub(3)),
                                 Node {
-                                    root: SparseToken::stub(Multiply),
+                                    root: LexerTokenPayloadStub::stub(Multiply),
                                     args: vec![
-                                        Node::leaf(SparseToken::stub(Integer(5))),
-                                        Node::leaf(SparseToken::stub(Integer(-7))),
+                                        Node::leaf(IntegerStub::stub(5)),
+                                        Node::leaf(IntegerStub::stub(-7)),
                                     ],
                                 },
                             ],
                         },
                         Node {
-                            root: SparseToken::stub(Subtract),
+                            root: LexerTokenPayloadStub::stub(Subtract),
                             args: vec![
                                 Node {
-                                    root: SparseToken::stub(Multiply),
+                                    root: LexerTokenPayloadStub::stub(Multiply),
                                     args: vec![
-                                        Node::leaf(SparseToken::stub(Integer(11))),
-                                        Node::leaf(SparseToken::stub(Integer(13))),
+                                        Node::leaf(IntegerStub::stub(11)),
+                                        Node::leaf(IntegerStub::stub(13)),
                                     ],
                                 },
-                                Node::leaf(SparseToken::stub(Integer(15))),
+                                Node::leaf(IntegerStub::stub(15)),
                             ],
                         },
                     ],
@@ -814,10 +814,10 @@ mod specs {
         // let actual = ast::DebugAst::from(actual);
         let expected = SparseAst {
             statements: vec![Node {
-                root: SparseToken::stub(DefineLocal),
+                root: LexerTokenPayloadStub::stub(DefineLocal),
                 args: vec![
-                    Node::leaf(SparseToken::stub(Ident("a".to_string()))),
-                    Node::leaf(SparseToken::stub(Integer(3))),
+                    Node::leaf(StringStub::stub("a")),
+                    Node::leaf(IntegerStub::stub(3)),
                 ],
             }],
         };
@@ -858,14 +858,14 @@ mod specs {
         // let actual = ast::DebugAst::from(actual);
         let expected = SparseAst {
             statements: vec![Node {
-                root: SparseToken::stub(DefineLocal),
+                root: LexerTokenPayloadStub::stub(DefineLocal),
                 args: vec![
-                    Node::leaf(SparseToken::stub(Ident("a".to_string()))),
+                    Node::leaf(StringStub::stub("a")),
                     Node {
-                        root: SparseToken::stub(Add),
+                        root: LexerTokenPayloadStub::stub(Add),
                         args: vec![
-                            Node::leaf(SparseToken::stub(Integer(3))),
-                            Node::leaf(SparseToken::stub(Integer(5))),
+                            Node::leaf(IntegerStub::stub(3)),
+                            Node::leaf(IntegerStub::stub(5)),
                         ],
                     },
                 ],
@@ -928,39 +928,39 @@ mod specs {
         let expected = SparseAst {
             statements: vec![
                 Node {
-                    root: SparseToken::stub(DefineLocal),
+                    root: LexerTokenPayloadStub::stub(DefineLocal),
                     args: vec![
-                        Node::leaf(SparseToken::stub(Ident("a".to_string()))),
-                        Node::leaf(SparseToken::stub(Integer(3))),
+                        Node::leaf(StringStub::stub("a")),
+                        Node::leaf(IntegerStub::stub(3)),
                     ],
                 },
                 Node {
-                    root: SparseToken::stub(DefineLocal),
+                    root: LexerTokenPayloadStub::stub(DefineLocal),
                     args: vec![
-                        Node::leaf(SparseToken::stub(Ident("b".to_string()))),
+                        Node::leaf(StringStub::stub("b")),
                         Node {
-                            root: SparseToken::stub(Add),
+                            root: LexerTokenPayloadStub::stub(Add),
                             args: vec![
-                                Node::leaf(SparseToken::stub(Ident("a".to_string()))),
-                                Node::leaf(SparseToken::stub(Integer(5))),
+                                Node::leaf(StringStub::stub("a")),
+                                Node::leaf(IntegerStub::stub(5)),
                             ],
                         },
                     ],
                 },
                 Node {
-                    root: SparseToken::stub(DefineLocal),
+                    root: LexerTokenPayloadStub::stub(DefineLocal),
                     args: vec![
-                        Node::leaf(SparseToken::stub(Ident("c".to_string()))),
-                        Node::leaf(SparseToken::stub(Integer(7))),
+                        Node::leaf(StringStub::stub("c")),
+                        Node::leaf(IntegerStub::stub(7)),
                     ],
                 },
                 Node {
-                    root: SparseToken::stub(Ident("stdout".to_string())),
+                    root: StringStub::stub("stdout"),
                     args: vec![Node {
-                        root: SparseToken::stub(Ident("max".to_string())),
+                        root: StringStub::stub("max"),
                         args: vec![
-                            Node::leaf(SparseToken::stub(Ident("b".to_string()))),
-                            Node::leaf(SparseToken::stub(Ident("c".to_string()))),
+                            Node::leaf(StringStub::stub("b")),
+                            Node::leaf(StringStub::stub("c")),
                         ],
                     }],
                 },
@@ -1019,16 +1019,16 @@ mod specs {
         let expected = ast::SparseAst {
             statements: vec![
                 Node {
-                    root: SparseToken::stub(DefineLocal),
+                    root: LexerTokenPayloadStub::stub(DefineLocal),
                     args: vec![
-                        Node::leaf(SparseToken::stub(Ident("a".to_string()))),
-                        Node::leaf(SparseToken::stub(Ident("i16".to_string()))),
-                        Node::leaf(SparseToken::stub(Integer(3))),
+                        Node::leaf(StringStub::stub("a")),
+                        Node::leaf(StringStub::stub("i16")),
+                        Node::leaf(IntegerStub::stub(3)),
                     ],
                 },
                 Node {
-                    root: SparseToken::stub(Ident("stdout".to_string())),
-                    args: vec![Node::leaf(SparseToken::stub(Ident("a".to_string())))],
+                    root: StringStub::stub("stdout"),
+                    args: vec![Node::leaf(StringStub::stub("a"))],
                 },
             ],
         };
@@ -1098,48 +1098,48 @@ mod specs {
         let expected = ast::SparseAst {
             statements: vec![
                 Node {
-                    root: SparseToken::stub(DefineLocal),
+                    root: LexerTokenPayloadStub::stub(DefineLocal),
                     args: vec![
-                        Node::leaf(SparseToken::stub(Ident("a".to_string()))),
-                        Node::leaf(SparseToken::stub(Ident("i32".to_string()))),
-                        Node::leaf(SparseToken::stub(Integer(3))),
+                        Node::leaf(StringStub::stub("a")),
+                        Node::leaf(StringStub::stub("i32")),
+                        Node::leaf(IntegerStub::stub(3)),
                     ],
                 },
                 Node {
-                    root: SparseToken::stub(DefineLocal),
+                    root: LexerTokenPayloadStub::stub(DefineLocal),
                     args: vec![
-                        Node::leaf(SparseToken::stub(Ident("b".to_string()))),
-                        Node::leaf(SparseToken::stub(Ident("i8".to_string()))),
+                        Node::leaf(StringStub::stub("b")),
+                        Node::leaf(StringStub::stub("i8")),
                         Node {
-                            root: SparseToken::stub(Add),
+                            root: LexerTokenPayloadStub::stub(Add),
                             args: vec![
                                 Node {
-                                    root: SparseToken::stub(Cast),
+                                    root: LexerTokenPayloadStub::stub(Cast),
                                     args: vec![
-                                        Node::leaf(SparseToken::stub(Ident("a".to_string()))),
-                                        Node::leaf(SparseToken::stub(Ident("i8".to_string()))),
+                                        Node::leaf(StringStub::stub("a")),
+                                        Node::leaf(StringStub::stub("i8")),
                                     ],
                                 },
-                                Node::leaf(SparseToken::stub(Integer(5))),
+                                Node::leaf(IntegerStub::stub(5)),
                             ],
                         },
                     ],
                 },
                 Node {
-                    root: SparseToken::stub(DefineLocal),
+                    root: LexerTokenPayloadStub::stub(DefineLocal),
                     args: vec![
-                        Node::leaf(SparseToken::stub(Ident("c".to_string()))),
-                        Node::leaf(SparseToken::stub(Ident("i8".to_string()))),
-                        Node::leaf(SparseToken::stub(Integer(7))),
+                        Node::leaf(StringStub::stub("c")),
+                        Node::leaf(StringStub::stub("i8")),
+                        Node::leaf(IntegerStub::stub(7)),
                     ],
                 },
                 Node {
-                    root: SparseToken::stub(Ident("stdout".to_string())),
+                    root: StringStub::stub("stdout"),
                     args: vec![Node {
-                        root: SparseToken::stub(Ident("max".to_string())),
+                        root: StringStub::stub("max"),
                         args: vec![
-                            Node::leaf(SparseToken::stub(Ident("b".to_string()))),
-                            Node::leaf(SparseToken::stub(Ident("c".to_string()))),
+                            Node::leaf(StringStub::stub("b")),
+                            Node::leaf(StringStub::stub("c")),
                         ],
                     }],
                 },

@@ -1,6 +1,5 @@
-use crate::ast::{AstTokenPayload, DenseAst, SparseAst, Node};
+use crate::ast::{AstTokenPayload, DenseAst, Node, SparseAst};
 use crate::CompilerError;
-
 
 pub fn generate_sparse(ast: SparseAst) -> Result<SparseAst, CompilerError> {
     let statements = ast
@@ -12,7 +11,7 @@ pub fn generate_sparse(ast: SparseAst) -> Result<SparseAst, CompilerError> {
                 args: vec![statement.args[0].clone()],
             }),
             AstTokenPayload::Symbol(_) => Ok(statement), // Function Call
-            AstTokenPayload::DefineLocal => Ok(statement),
+            AstTokenPayload::DefineLocal(_) => Ok(statement),
             _ => Err(CompilerError {
                 location: statement.root.loc.clone(),
                 msg: format!(
@@ -36,7 +35,7 @@ pub fn generate(ast: DenseAst) -> Result<DenseAst, CompilerError> {
                 args: vec![statement.args[0].clone()],
             }),
             AstTokenPayload::Symbol(_) => Ok(statement), // Function Call
-            AstTokenPayload::DefineLocal => Ok(statement),
+            AstTokenPayload::DefineLocal(_) => Ok(statement),
             _ => Err(CompilerError {
                 location: statement.root.loc.clone(),
                 msg: format!(

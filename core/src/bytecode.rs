@@ -155,7 +155,7 @@ fn unroll_node<'a>(
             }
             Ok(signature.return_type)
         }
-        AstTokenPayload::DefineLocal => {
+        AstTokenPayload::DefineLocal(_) => {
             // Compile argument
             if node.args.len() != 2 && node.args.len() != 3 {
                 // TODO: Handle Type declaration
