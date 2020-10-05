@@ -54,6 +54,36 @@ impl Type {
             _ => Type::Int32,
         }
     }
+
+    pub fn merge(a: &Option<Self>, b: &Option<Self>) -> Result<Option<Self>, ()> {
+        if let Some(a) = a {
+            if let Some(b) = b {
+                if b != a {
+                    Err(())
+                } else {
+                    Ok(Some(a.clone()))
+                }
+            } else {
+                Ok(Some(a.clone()))
+            }
+        } else {
+            Ok(b.clone())
+        }
+    }
+}
+
+impl fmt::Display for Type {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let s = match self {
+            Type::Int8 => "int8",
+            Type::Int16 => "int16",
+            Type::Int32 => "int32",
+            Type::Int64 => "int64",
+            Type::Void => "void",
+            Type::Type => "type",
+        };
+        write!(f, "{}", s)
+    }
 }
 
 #[derive(PartialEq, Clone)]
@@ -248,6 +278,12 @@ impl Context {
                 msg: format!("Symbol {} was not defined.", ident),
             }),
             Some(dec) => Ok(dec),
+        }
+    }
+
+    pub fn new() -> Self {
+        Self {
+            declarations: HashMap::new(),
         }
     }
 }

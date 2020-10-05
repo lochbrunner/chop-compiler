@@ -16,7 +16,7 @@ errors=()
 
 printf "Testing interpeter\n"
 for CASE in "${CASES[@]}"; do
-    printf "test $CASE ..."
+    printf "test $CASE ... "
     expected=$(cat "${CASE%.*}".out)
     actual=$($CASE)
 

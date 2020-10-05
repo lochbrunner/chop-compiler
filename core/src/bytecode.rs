@@ -155,33 +155,21 @@ fn unroll_node<'a>(
             }
             Ok(signature.return_type)
         }
-        AstTokenPayload::DefineLocal(_) => {
+        AstTokenPayload::DefineLocal(ref dtype) => {
             // Compile argument
-            if node.args.len() != 2 && node.args.len() != 3 {
+            if node.args.len() != 2 {
                 // TODO: Handle Type declaration
-                return Err(CompilerError::from_token::<DenseToken>(
-                    &node.root,
-                    format!(
-                        "Exporter Error: DefineLocal need two arguments but got {}",
-                        node.args.len()
-                    ),
-                ));
+                return Err(node.root.loc.to_error(format!(
+                    "Exporter Error: DefineLocal need two arguments but got {}",
+                    node.args.len()
+                )));
             }
-            let has_type = node.args.len() == 3;
-            let _arg = unroll_node(
-                node.args
-                    .get(if has_type { 2 } else { 1 })
-                    .expect("Definition"),
-            )?;
+            let dtype = dtype.clone().unwrap_or(Type::Int32);
+            unroll_node(node.args.get(1).expect("Definition"))?;
 
-            let decl_type = if has_type {
-                Type::from_dense_token(&node.args.get(1).expect("Type Declaration").root)
-            } else {
-                Type::Int32
-            };
-            bytecode.push(ByteCode::Alloca(decl_type.clone()));
+            bytecode.push(ByteCode::Alloca(dtype.clone()));
             let index = register_map.len();
-            bytecode.push(ByteCode::Store(decl_type, index));
+            bytecode.push(ByteCode::Store(dtype, index));
             register_map.insert(
                 &node
                     .args
@@ -292,6 +280,10 @@ mod specs {
 
     #[test]
     fn milestone_4_main() {
+        // a := 3
+        // b := a + 5
+        // c := 7
+        // stdout max(b,c)
         let input = DenseAst {
             statements: vec![
                 Node {
@@ -374,18 +366,24 @@ mod specs {
         let input = DenseAst {
             statements: vec![
                 Node {
-                    root: DenseToken::stub(DefineLocal),
+                    root: DenseToken {
+                        payload: AstTokenPayload::DefineLocal(Some(Type::Int32)),
+                        return_type: Type::Void,
+                        loc: Location::default(),
+                    },
                     args: vec![
                         Node::leaf(DenseToken::stub(Ident("a".to_string()))),
-                        Node::leaf(DenseToken::stub(Ident("i32".to_string()))),
                         Node::leaf(DenseToken::stub(Integer(3))),
                     ],
                 },
                 Node {
-                    root: DenseToken::stub(DefineLocal),
+                    root: DenseToken {
+                        payload: AstTokenPayload::DefineLocal(Some(Type::Int8)),
+                        return_type: Type::Void,
+                        loc: Location::default(),
+                    },
                     args: vec![
                         Node::leaf(DenseToken::stub(Ident("b".to_string()))),
-                        Node::leaf(DenseToken::stub(Ident("i8".to_string()))),
                         Node {
                             root: DenseToken::stub(TokenPayload::Add),
                             args: vec![
@@ -408,10 +406,13 @@ mod specs {
                     ],
                 },
                 Node {
-                    root: DenseToken::stub(DefineLocal),
+                    root: DenseToken {
+                        payload: AstTokenPayload::DefineLocal(Some(Type::Int8)),
+                        return_type: Type::Void,
+                        loc: Location::default(),
+                    },
                     args: vec![
                         Node::leaf(DenseToken::stub(Ident("c".to_string()))),
-                        Node::leaf(DenseToken::stub(Ident("i8".to_string()))),
                         Node {
                             root: DenseToken::stub(Cast),
                             args: vec![
@@ -440,7 +441,8 @@ mod specs {
                 "max".to_string() => Declaration::full_template_function(2),
                 "a".to_string() => Declaration::variable(Type::Int32),
                 "b".to_string() => Declaration::variable(Type::Int8),
-                "c".to_string() => Declaration::variable(Type::Int8)
+                "c".to_string() => Declaration::variable(Type::Int8),
+                "i8".to_string() => Declaration::variable(Type::Type),
             },
         };
 

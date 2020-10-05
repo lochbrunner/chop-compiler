@@ -43,6 +43,8 @@ cchop <code filename> -o <output filename>
 
 ## Milestones
 
+### Basics
+
 1. [Interpret MVP](./milestones/1) :heavy_check_mark:
 1. [Compile MVP via LLVM](./milestones/2) :heavy_check_mark:
 1. [Mathematical operations and build-in functions](./milestones/3) :heavy_check_mark:
@@ -53,12 +55,21 @@ cchop <code filename> -o <output filename>
 1. [Code generation from intermediate steps](./milestones/8)
 1. Enums
 1. Control flow
+1. Arrays and Strings 
+1. Heap
 1. Caching
 1. Imports and Exports
 1. Meta Programming
+1. Hooks
 1. Borrowing (and checks)
-1. FFI
+1. FFI (foreign function interface)
 1. Debugging
+
+### Advanced
+
+1. Standard Library
+   * Container
+   * IO
 
 ## Goal - Self hosted language
 
