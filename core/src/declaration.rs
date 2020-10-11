@@ -164,12 +164,10 @@ impl Declaration {
                 // Get at least one type
                 let tp = if let Some(tp) = get_type(&partial.args) {
                     tp
+                } else if let Some(ref return_type) = partial.return_type {
+                    return_type.clone()
                 } else {
-                    if let Some(ref return_type) = partial.return_type {
-                        return_type.clone()
-                    } else {
-                        return Err(format!("[D1]: No types found in {:?}", partial));
-                    }
+                    return Err(format!("[D1]: No types found in {:?}", partial));
                 };
                 let args_count = partial.args.len();
                 Ok(Signature {

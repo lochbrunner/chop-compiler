@@ -26,7 +26,7 @@ where
         }
     }
 
-    return (a, b);
+    (a, b)
 }
 
 fn destruct_vector_3<T>(vec: Vec<T>) -> (T, T, T)
@@ -45,7 +45,7 @@ where
         }
     }
 
-    return (a, b, c);
+    (a, b, c)
 }
 
 /// Does not support functions yet
@@ -172,7 +172,7 @@ fn specialize_symbol(
             args.len()
         )));
     }
-    let decl_args = decl.signature.args.iter().cloned().collect::<Vec<_>>();
+    let decl_args = decl.signature.args.to_vec();
 
     let args = args
         .into_iter()
@@ -240,22 +240,22 @@ fn specialize_node<'a>(
             | AstTokenPayload::Multiply
             | AstTokenPayload::Divide
             | AstTokenPayload::Remainder => {
-                specialize_binary_op(payload, args, loc, expected.clone(), context)
+                specialize_binary_op(payload, args, loc, expected, context)
             }
             AstTokenPayload::Symbol(ident) => {
-                specialize_symbol(ident, args, loc, expected.clone(), context)
+                specialize_symbol(ident, args, loc, expected, context)
             }
             // What are the expected types
             // For now assume each is a Int32
             _ => {
-                let expected = expected.clone().unwrap_or(Type::Int32);
+                let expected = expected.unwrap_or(Type::Int32);
                 let args = args
                     .into_iter()
                     .map(|s| (s, None))
                     .map(specialize_node(context))
                     .collect::<Result<Vec<_>, CompilerError>>()?;
                 // Find type child from parent
-                let r_type = return_type(None).unwrap_or(expected.clone());
+                let r_type = return_type(None).unwrap_or(expected);
                 Ok(DenseNode {
                     root: DenseToken {
                         payload,

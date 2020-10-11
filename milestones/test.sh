@@ -56,10 +56,10 @@ done
 
 printf "\n"
 if test "$FAILED" -eq "0"; then
-    echo -e "${GREEN}All milestones tests succeeded!$NC"
+    echo -e "${GREEN}All milestone tests succeeded!$NC"
     exit 0
 else
-    echo -e "${RED}$FAILED milestones tests failed!$NC"
+    echo -e "${RED}$FAILED milestone tests failed!$NC"
     for error in ${errors[@]}; do
         echo $error
     done

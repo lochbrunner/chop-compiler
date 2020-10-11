@@ -157,7 +157,10 @@ pub fn evaluate(code: &[ByteCode], writer: &mut dyn Write) -> Result<(), String>
                     _ => return Err(format!("Unknown function {}", ident)),
                 }
             }
+            ByteCode::PushInt8(v) => stack.push(StackItem::Int8(*v)),
+            ByteCode::PushInt16(v) => stack.push(StackItem::Int16(*v)),
             ByteCode::PushInt32(v) => stack.push(StackItem::Int32(*v)),
+            ByteCode::PushInt64(v) => stack.push(StackItem::Int64(*v)),
             ByteCode::Add(Type::Int8) => {
                 let a = pop_as_int8(&mut stack)?;
                 let b = pop_as_int8(&mut stack)?;
@@ -302,6 +305,10 @@ pub fn evaluate(code: &[ByteCode], writer: &mut dyn Write) -> Result<(), String>
 
 #[cfg(test)]
 mod specs {
+    #![macro_use]
+    macro_rules! assert_ok(
+        ($result:expr) => (assert!($result.is_ok(), format!("Not ok: {:?}", $result.unwrap_err())));
+    );
     use super::*;
     use std::io::Cursor;
     use ByteCode::*;
@@ -310,7 +317,7 @@ mod specs {
         let bytecode = vec![PushInt32(42), StdOut];
         let mut stdout = Cursor::new(vec![]);
         let result = evaluate(&bytecode, &mut stdout);
-        assert!(result.is_ok());
+        assert_ok!(result);
         assert_eq!(&stdout.get_ref()[0..2], b"42");
     }
     #[test]
@@ -326,7 +333,7 @@ mod specs {
 
         let mut stdout = Cursor::new(vec![]);
         let result = evaluate(&bytecode, &mut stdout);
-        assert!(result.is_ok());
+        assert_ok!(result);
         assert_eq!(&stdout.get_ref()[0..9], b"42\n35\n28\n");
     }
 
@@ -336,7 +343,7 @@ mod specs {
 
         let mut stdout = Cursor::new(vec![]);
         let result = evaluate(&bytecode, &mut stdout);
-        assert!(result.is_ok());
+        assert_ok!(result);
         assert_eq!(&stdout.get_ref()[0..2], b"8\n");
     }
 

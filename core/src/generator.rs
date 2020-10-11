@@ -23,7 +23,7 @@ pub fn generate_sparse_multiple(ast: SparseAst) -> Result<SparseAst, CompilerErr
     let statements = ast
         .statements
         .into_iter()
-        .map(|statement| generate_sparse(statement))
+        .map(generate_sparse)
         .collect::<Result<Vec<_>, _>>()?;
     Ok(SparseAst { statements })
 }
