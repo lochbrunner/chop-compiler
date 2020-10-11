@@ -165,7 +165,11 @@ impl Declaration {
                 let tp = if let Some(tp) = get_type(&partial.args) {
                     tp
                 } else {
-                    return Err(format!("No types found in {:?}", partial));
+                    if let Some(ref return_type) = partial.return_type {
+                        return_type.clone()
+                    } else {
+                        return Err(format!("[D1]: No types found in {:?}", partial));
+                    }
                 };
                 let args_count = partial.args.len();
                 Ok(Signature {
@@ -259,6 +263,15 @@ impl Declaration {
     pub fn req_args_count(&self) -> usize {
         self.signature.args.len()
     }
+
+    pub fn is_type(&self) -> bool {
+        // TODO: use deduce_complete here later
+        if let Some(dtype) = &self.signature.return_type {
+            dtype == &Type::Type
+        } else {
+            false
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -275,7 +288,7 @@ impl Context {
         match self.declarations.get(ident) {
             None => Err(CompilerError {
                 location: location.clone(),
-                msg: format!("Symbol {} was not defined.", ident),
+                msg: format!("[C1] Symbol {} was not defined.", ident),
             }),
             Some(dec) => Ok(dec),
         }

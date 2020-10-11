@@ -14,7 +14,7 @@ CASES=($(ls ./milestones/*/*.ch))
 
 errors=()
 
-printf "Testing interpeter\n"
+printf "Testing interpretor\n"
 for CASE in "${CASES[@]}"; do
     printf "test $CASE ... "
     expected=$(cat "${CASE%.*}".out)

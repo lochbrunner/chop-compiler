@@ -1,6 +1,5 @@
 
-[![build status](https://travis-ci.org/lochbrunner/chop-compiler.svg?branch=master)](https://travis-ci.org/lochbrunner/chop-compiler)
-[![GitHub Actions status](https://github.com/lochbrunner/chop-compiler/workflows/test/badge.svg)](https://github.com/lochbrunner/chop-compiler/actions?workflow=test)
+[![GitHub Actions status](https://github.com/lochbrunner/chop-compiler/workflows/unit-test/badge.svg)](https://github.com/lochbrunner/chop-compiler/actions?workflow=unit-test)
 [![GitHub Actions status](https://github.com/lochbrunner/chop-compiler/workflows/milestones/badge.svg)](https://github.com/lochbrunner/chop-compiler/actions?workflow=milestones)
 
 

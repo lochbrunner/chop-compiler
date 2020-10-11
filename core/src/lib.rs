@@ -1,5 +1,6 @@
-// #[cfg(test)]
-// use std::cmp::PartialEq;
+#[cfg(test)]
+pub mod macros;
+//
 pub mod ast;
 pub mod bytecode;
 pub mod declaration;
@@ -10,6 +11,7 @@ mod parser;
 mod simplifier;
 mod specializer;
 pub mod token;
+pub use ast::DenseAst;
 use declaration::{Context, Declaration, Type};
 pub use error::CompilerError;
 
@@ -33,9 +35,14 @@ pub fn build(code: &str) -> Result<Vec<ByteCode>, CompilerError> {
     };
 
     let tokens = lexer::lex(code)?;
-    let ast = parser::parse(&mut context, &tokens)?;
-    let ast = generator::generate_sparse(ast)?;
-    let ast = specializer::specialize(ast, &mut context)?;
+    let mut state = parser::ParserState::new();
+    let mut ast = DenseAst::new();
+    while let Some((statement, new_state)) = parser::parse(state, &mut context, &tokens)? {
+        state = new_state;
+        let statement = generator::generate_sparse(statement)?;
+        let statement = specializer::specialize(statement, &mut context)?;
+        ast.statements.push(statement);
+    }
     let ast = simplifier::simplify(ast)?;
     // TODO: cache
     bytecode::compile(&context, ast)
@@ -44,6 +51,7 @@ pub fn build(code: &str) -> Result<Vec<ByteCode>, CompilerError> {
 #[cfg(test)]
 mod e2e {
     use super::*;
+    use crate::ast::DenseAst;
     use declaration::Type;
     use ByteCode::*;
 
@@ -56,7 +64,7 @@ mod e2e {
 
             42 | stdout",
         );
-        assert!(actual.is_ok());
+        assert_ok!(actual);
         let actual = actual.unwrap();
         let expected = vec![PushInt32(42), StdOut];
         let expected = [&HEADER[..], &expected].concat();
@@ -73,7 +81,7 @@ mod e2e {
             35 | stdout",
         );
 
-        assert!(actual.is_ok());
+        assert_ok!(actual);
         let actual = actual.unwrap();
 
         let expected = vec![PushInt32(42), StdOut, PushInt32(35), StdOut];
@@ -91,7 +99,7 @@ mod e2e {
         stdout 28",
         );
 
-        assert!(actual.is_ok());
+        assert_ok!(actual);
         let actual = actual.unwrap();
 
         let expected = vec![
@@ -114,8 +122,7 @@ mod e2e {
 
             stdout max(3,5)",
         );
-
-        assert!(actual.is_ok());
+        assert_ok!(actual);
         let actual = actual.unwrap();
         let expected = vec![
             PushInt32(3),
@@ -138,10 +145,10 @@ mod e2e {
 
         let actual = build(code);
 
-        assert!(actual.is_ok());
+        assert_ok!(actual);
         let actual = actual.unwrap();
 
-        let expected = vec![
+        let expected = [
             // head
             Alloca(Type::Int32),
             PushInt32(0),
@@ -160,59 +167,73 @@ mod e2e {
             Add(Type::Int32),
             StdOut,
         ];
+
+        assert_eq!(actual, expected);
     }
 
-    // #[test]
-    // fn milestone_5_main() {
-    //     let code = "#!/usr/bin/env ichop
+    #[test]
+    fn milestone_5_main() {
+        use self::Type::*;
+        let code = "#!/usr/bin/env ichop
 
-    //         a: i32 := 3
-    //         b:= a as i8 + 5
-    //         c: i8 := 7
-    //         stdout max(b,c)";
+            a: i32 := 3
+            b:= a as i8 + 5
+            c: i8 := 7
+            stdout max(b,c)";
 
-    //     let mut context = Context {
-    //         declarations: hashmap! {
-    //             "stdout".to_string() => Declaration::full_template_statement(1),
-    //             "max".to_string() => Declaration::full_template_function(2),
-    //             "min".to_string() => Declaration::full_template_function(2),
-    //             "i8".to_string() => Declaration::variable(Type::Type),
-    //             "i32".to_string() => Declaration::variable(Type::Type),
-    //         },
-    //     };
-    //     let tokens = lexer::lex(code).unwrap();
+        let mut context = Context {
+            declarations: hashmap! {
+                // "stdout".to_string() => Declaration::full_template_statement(1),
+                "stdout".to_string() => Declaration::function(Void, vec![Int8], true),
+                "max".to_string() => Declaration::full_template_function(2),
+                "min".to_string() => Declaration::full_template_function(2),
+                "i8".to_string() => Declaration::variable(Type),
+                "i32".to_string() => Declaration::variable(Type),
+            },
+        };
+        let tokens = lexer::lex(code).unwrap();
+        let mut state = parser::ParserState::new();
+        let mut ast = DenseAst::new();
+        while let Some((statement, new_state)) =
+            parser::parse(state, &mut context, &tokens).unwrap()
+        {
+            state = new_state;
+            let statement = generator::generate_sparse(statement).unwrap();
+            let statement = specializer::specialize(statement, &mut context).unwrap();
+            ast.statements.push(statement);
+        }
+        let ast = simplifier::simplify(ast).unwrap();
+        let actual = bytecode::compile(&context, ast);
 
-    //     parser::parse(&mut context, &tokens).unwrap().statements.iter()
-    //     .map()
-    //     .collect();
+        assert_ok!(actual);
+        let actual = actual.unwrap();
 
-    //     let ast = parser::parse(&mut context, &tokens).unwrap();
-    //     let ast = generator::generate_sparse(ast).unwrap();
-    //     // dbg!(&ast);
-    //     let ast = specializer::specialize(ast, &mut context).unwrap();
-    //     let ast = simplifier::simplify(ast).unwrap();
-    //     let actual = bytecode::compile(&context, ast);
+        let expected = [
+            Alloca(Int32),
+            PushInt32(0),
+            Store(Int32, 0),
+            // a: i32 := 3
+            PushInt32(3),
+            Alloca(Int32),
+            Store(Int32, 1),
+            // b:= a as i8 + 5
+            Load(Int32, 1),
+            CastInt(Int32, Int8),
+            PushInt8(5),
+            Add(Int8),
+            Alloca(Int8),
+            Store(Int8, 2),
+            // c: i8 := 7
+            PushInt8(7),
+            Alloca(Int8),
+            Store(Int8, 3),
+            // stdout max(b,c)
+            Load(Int8, 2),
+            Load(Int8, 3),
+            Call2("max".to_owned(), Int8, Int8, Int8),
+            StdOut,
+        ];
 
-    //     // dbg!(&actual);
-    //     assert!(actual.is_ok());
-    //     let actual = actual.unwrap();
-
-    //     let expected = vec![
-    //         // a: i32 := 3
-    //         Alloca(Type::Int32),
-    //         PushInt32(0),
-    //         Store(Type::Int32, 0),
-    //         Alloca(Type::Int32),
-    //         Store(Type::Int32, 1),
-    //         Alloca(Type::Int8),
-    //         Store(Type::Int8, 2),
-    //         Alloca(Type::Int8),
-    //         Store(Type::Int8, 3),
-    //         // stdout max(b,c)
-    //         Load(Type::Int8, 2),
-    //         Load(Type::Int8, 3),
-    //         Call2("max".to_owned(), Type::Int8, Type::Int8, Type::Int8),
-    //         StdOut,
-    //     ];
-    // }
+        assert_eq!(actual, expected);
+    }
 }

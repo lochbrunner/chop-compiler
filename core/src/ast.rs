@@ -302,8 +302,44 @@ pub struct Ast<T> {
     pub statements: Vec<Node<T>>,
 }
 
+impl<T> Ast<T> {
+    pub fn append(&mut self, mut other: Self) {
+        self.statements.append(&mut other.statements);
+    }
+}
+
 pub type SparseAst = Ast<SparseToken>;
 pub type DenseAst = Ast<DenseToken>;
+
+impl DenseAst {
+    pub fn new() -> Self {
+        Self {
+            statements: Vec::new(),
+        }
+    }
+}
+
+#[cfg(test)]
+pub type DebugNode = Node<AstTokenPayload>;
+#[cfg(test)]
+impl DebugNode {
+    fn move_nodes(nodes: Vec<Node<SparseToken>>) -> Vec<Node<AstTokenPayload>> {
+        nodes
+            .into_iter()
+            .map(|node| Node {
+                root: node.root.payload,
+                args: DebugAst::move_nodes(node.args),
+            })
+            .collect()
+    }
+    pub fn from(node: Node<SparseToken>) -> DebugNode {
+        let Node { root, args } = node;
+        DebugNode {
+            root: root.payload,
+            args: DebugNode::move_nodes(args),
+        }
+    }
+}
 
 #[cfg(test)]
 pub type DebugAst = Ast<AstTokenPayload>;

@@ -6,6 +6,7 @@ use std::collections::HashMap;
 #[derive(PartialEq, Debug, Clone)]
 pub enum ByteCode {
     StdOut, // For now hard-coded
+    // ident, return type, arg1, arg2
     Call2(String, Type, Type, Type),
     PushInt8(i8),
     PushInt16(i16),
@@ -38,7 +39,7 @@ fn get_common_type_2(
         Err(CompilerError {
             location: location.clone(),
             msg: format!(
-                "Exporter Error: Operator/function {} expected 2 arguments but got {}",
+                "[E1]: Operator/function {} expected 2 arguments but got {}",
                 name,
                 args.len()
             ),
@@ -47,9 +48,10 @@ fn get_common_type_2(
         Err(CompilerError {
             location: location.clone(),
             msg: format!(
-                "Exporter Error: Arguments of operator/function \"{}\" expected are different. {:?} and {:?}",
+                "[E2]: Arguments of operator/function \"{}\" are different. {:?} and {:?}",
                 name,
-                args.get(0).unwrap(), args.get(1).unwrap()
+                args.get(0).unwrap(),
+                args.get(1).unwrap()
             ),
         })
     } else {
@@ -94,9 +96,28 @@ fn unroll_node<'a>(
         AstTokenPayload::Integer(ref provider) => {
             // TODO: get value of correct type
             // let v = provider.get_i32().convert(&node.root.loc)?;
-            let v = provider.content as i32;
-            bytecode.push(ByteCode::PushInt32(v));
-            Ok(Type::Int32)
+            let v = provider.content;
+            match node.root.return_type {
+                Type::Int8 => {
+                    bytecode.push(ByteCode::PushInt8(v as i8));
+                }
+                Type::Int16 => {
+                    bytecode.push(ByteCode::PushInt16(v as i16));
+                }
+                Type::Int32 => {
+                    bytecode.push(ByteCode::PushInt32(v as i32));
+                }
+                Type::Int64 => {
+                    bytecode.push(ByteCode::PushInt64(v as i64));
+                }
+                _ => {
+                    return Err(node.root.loc.to_error(format!(
+                        "[E3]: An integer can not be of type {:?}",
+                        node.root.return_type
+                    )))
+                }
+            }
+            Ok(node.root.return_type.clone())
         }
         AstTokenPayload::Symbol(ref ident) => {
             let declaration = context.get_declaration(ident, &node.root.loc)?;
@@ -117,7 +138,7 @@ fn unroll_node<'a>(
                     return Err(CompilerError::from_token::<DenseToken>(
                         &node.root,
                         format!(
-                            "Signature of variable/function \"{}\" could not be resolved: {}",
+                            "[E4]: Signature of variable/function \"{}\" could not be resolved: {}",
                             ident, msg
                         ),
                     ))
@@ -129,7 +150,7 @@ fn unroll_node<'a>(
                 } else {
                     return Err(CompilerError::from_token::<DenseToken>(
                         &node.root,
-                        format!("No Variable with name {} found in register", ident),
+                        format!("[E5]: No Variable with name {} found in register", ident),
                     ));
                 }
             } else {
@@ -141,7 +162,7 @@ fn unroll_node<'a>(
                         if arg_types.len() != 2 {
                             return Err(CompilerError::from_token::<DenseToken>(
                                 &node.root,
-                                format!("No Function {} expects {} arguments, but only 2 arguments are supported yet.", ident, declaration.req_args_count()),
+                                format!("[E6]: No Function {} expects {} arguments, but only 2 arguments are supported yet.", ident, declaration.req_args_count()),
                             ));
                         }
                         bytecode.push(ByteCode::Call2(
@@ -160,7 +181,7 @@ fn unroll_node<'a>(
             if node.args.len() != 2 {
                 // TODO: Handle Type declaration
                 return Err(node.root.loc.to_error(format!(
-                    "Exporter Error: DefineLocal need two arguments but got {}",
+                    "[E7]: Exporter Error: DefineLocal need two arguments but got {}",
                     node.args.len()
                 )));
             }
@@ -194,7 +215,10 @@ fn unroll_node<'a>(
         }
         _ => Err(CompilerError {
             location: node.root.loc.clone(),
-            msg: format!("Exporter Error: Unknown token {:?}", node.root.payload),
+            msg: format!(
+                "[E8]: Exporter Error: Unknown token {:?}",
+                node.root.payload
+            ),
         }),
     }
 }
@@ -227,7 +251,10 @@ mod specs {
         let input = DenseAst {
             statements: vec![Node {
                 root: DenseToken::stub(TokenPayload::Ident("stdout".to_owned())),
-                args: vec![Node::leaf(DenseToken::stub(TokenPayload::Integer(42)))],
+                args: vec![Node::leaf(DenseToken::stub_typed(
+                    TokenPayload::Integer(42),
+                    Type::Int32,
+                ))],
             }],
         };
 
@@ -237,7 +264,7 @@ mod specs {
             },
         };
         let actual = compile(&context, input);
-        assert!(actual.is_ok());
+        assert_ok!(actual);
         let actual = actual.unwrap();
         let expected = vec![PushInt32(42), StdOut];
         let expected = [&HEADER[..], &expected].concat();
@@ -253,8 +280,14 @@ mod specs {
                 args: vec![Node {
                     root: DenseToken::stub(TokenPayload::Add),
                     args: vec![
-                        Node::leaf(DenseToken::stub(TokenPayload::Integer(3))),
-                        Node::leaf(DenseToken::stub(TokenPayload::Integer(5))),
+                        Node::leaf(DenseToken::stub_typed(
+                            TokenPayload::Integer(3),
+                            Type::Int32,
+                        )),
+                        Node::leaf(DenseToken::stub_typed(
+                            TokenPayload::Integer(5),
+                            Type::Int32,
+                        )),
                     ],
                 }],
             }],
@@ -265,7 +298,7 @@ mod specs {
             },
         };
         let actual = compile(&context, input);
-        assert!(actual.is_ok());
+        assert_ok!(actual);
         let actual = actual.unwrap();
         let expected = vec![
             PushInt32(3),
@@ -290,7 +323,7 @@ mod specs {
                     root: DenseToken::stub(DefineLocal),
                     args: vec![
                         Node::leaf(DenseToken::stub(Ident("a".to_string()))),
-                        Node::leaf(DenseToken::stub(Integer(3))),
+                        Node::leaf(DenseToken::stub_typed(Integer(3), Type::Int32)),
                     ],
                 },
                 Node {
@@ -301,7 +334,7 @@ mod specs {
                             root: DenseToken::stub(TokenPayload::Add),
                             args: vec![
                                 Node::leaf(DenseToken::stub(Ident("a".to_string()))),
-                                Node::leaf(DenseToken::stub(Integer(5))),
+                                Node::leaf(DenseToken::stub_typed(Integer(5), Type::Int32)),
                             ],
                         },
                     ],
@@ -310,7 +343,7 @@ mod specs {
                     root: DenseToken::stub(DefineLocal),
                     args: vec![
                         Node::leaf(DenseToken::stub(Ident("c".to_string()))),
-                        Node::leaf(DenseToken::stub(Integer(7))),
+                        Node::leaf(DenseToken::stub_typed(Integer(7), Type::Int32)),
                     ],
                 },
                 Node {
@@ -338,7 +371,7 @@ mod specs {
 
         let actual = compile(&context, input);
 
-        assert!(actual.is_ok());
+        assert_ok!(actual);
         let actual = actual.unwrap();
         let expected = vec![
             PushInt32(3),
@@ -373,7 +406,7 @@ mod specs {
                     },
                     args: vec![
                         Node::leaf(DenseToken::stub(Ident("a".to_string()))),
-                        Node::leaf(DenseToken::stub(Integer(3))),
+                        Node::leaf(DenseToken::stub_typed(Integer(3), Type::Int32)),
                     ],
                 },
                 Node {
@@ -397,7 +430,7 @@ mod specs {
                                 Node {
                                     root: DenseToken::stub(Cast),
                                     args: vec![
-                                        Node::leaf(DenseToken::stub(Integer(5))),
+                                        Node::leaf(DenseToken::stub_typed(Integer(5), Type::Int32)),
                                         Node::leaf(DenseToken::stub(Ident("i8".to_string()))),
                                     ],
                                 },
@@ -416,7 +449,7 @@ mod specs {
                         Node {
                             root: DenseToken::stub(Cast),
                             args: vec![
-                                Node::leaf(DenseToken::stub(Integer(7))),
+                                Node::leaf(DenseToken::stub_typed(Integer(7), Type::Int32)),
                                 Node::leaf(DenseToken::stub(Ident("i8".to_string()))),
                             ],
                         },
@@ -447,7 +480,7 @@ mod specs {
         };
 
         let actual = compile(&context, input);
-        assert!(actual.is_ok());
+        assert_ok!(actual);
         let actual = actual.unwrap();
 
         let expected = vec![
@@ -485,26 +518,27 @@ mod specs {
                     root: DenseToken::stub(DefineLocal),
                     args: vec![
                         Node::leaf(DenseToken::stub(Ident("a".to_string()))),
-                        Node::leaf(DenseToken::stub(Ident("i32".to_string()))),
-                        Node::leaf(DenseToken::stub(Integer(3))),
+                        Node::leaf(DenseToken::stub_typed(Integer(3), Type::Int32)),
                     ],
                 },
                 Node {
                     root: DenseToken::stub(DefineLocal),
                     args: vec![
                         Node::leaf(DenseToken::stub(Ident("b".to_string()))),
-                        Node::leaf(DenseToken::stub(Ident("i8".to_string()))),
                         Node {
                             root: DenseToken::stub(TokenPayload::Add),
                             args: vec![
                                 Node {
-                                    root: DenseToken::stub(Cast),
+                                    root: DenseToken::stub_typed(Cast, Type::Int8),
                                     args: vec![
-                                        Node::leaf(DenseToken::stub(Ident("a".to_string()))),
+                                        Node::leaf(DenseToken::stub_typed(
+                                            Ident("a".to_string()),
+                                            Type::Int32,
+                                        )),
                                         Node::leaf(DenseToken::stub(Ident("i8".to_string()))),
                                     ],
                                 },
-                                Node::leaf(DenseToken::stub(Integer(5))),
+                                Node::leaf(DenseToken::stub_typed(Integer(5), Type::Int8)),
                             ],
                         },
                     ],
@@ -513,8 +547,7 @@ mod specs {
                     root: DenseToken::stub(DefineLocal),
                     args: vec![
                         Node::leaf(DenseToken::stub(Ident("c".to_string()))),
-                        Node::leaf(DenseToken::stub(Ident("i8".to_string()))),
-                        Node::leaf(DenseToken::stub(Integer(7))),
+                        Node::leaf(DenseToken::stub_typed(Integer(7), Type::Int8)),
                     ],
                 },
                 Node {
@@ -541,7 +574,7 @@ mod specs {
         };
 
         let actual = compile(&context, input);
-        // assert!(actual.is_ok());
+        assert_ok!(actual);
         if let Err(error) = actual {
             error.print("test");
         }

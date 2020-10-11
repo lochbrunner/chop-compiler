@@ -161,7 +161,7 @@ mod specs {
         };
 
         let actual = simplify(input);
-        assert!(actual.is_ok());
+        assert_ok!(actual);
 
         let actual = actual.unwrap();
 

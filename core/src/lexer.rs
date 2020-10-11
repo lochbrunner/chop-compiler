@@ -323,7 +323,7 @@ mod specs {
   #[test]
   fn function_with_braces() {
     let actual = lex("stdout(42)");
-    assert!(actual.is_ok());
+    assert_ok!(actual);
     let actual = actual.unwrap();
 
     let expected = vec![
@@ -367,7 +367,7 @@ mod specs {
   #[test]
   fn function_without_braces() {
     let actual = lex("stdout 42");
-    assert!(actual.is_ok());
+    assert_ok!(actual);
     let actual = actual.unwrap();
 
     let expected = vec![
@@ -399,7 +399,7 @@ mod specs {
         stdout max(3,5)",
     );
 
-    assert!(actual.is_ok());
+    assert_ok!(actual);
     let actual = actual.unwrap();
     let actual = actual.into_iter().map(|t| t.token).collect::<Vec<_>>();
 
@@ -424,7 +424,7 @@ mod specs {
       stdout max(3+5*-7, 11*13-15)",
     );
 
-    assert!(actual.is_ok());
+    assert_ok!(actual);
     let actual = actual.unwrap();
 
     let expected = vec![
@@ -565,7 +565,7 @@ mod specs {
         stdout max(b*c)",
     );
 
-    assert!(actual.is_ok());
+    assert_ok!(actual);
     let actual = actual.unwrap();
     let actual = actual.into_iter().map(|t| t.token).collect::<Vec<_>>();
 
@@ -605,7 +605,7 @@ mod specs {
         stdout max(b,c)",
     );
 
-    assert!(actual.is_ok());
+    assert_ok!(actual);
     let actual = actual.unwrap();
     let actual = actual.into_iter().map(|t| t.token).collect::<Vec<_>>();
 
@@ -640,5 +640,4 @@ mod specs {
 
     assert_eq!(actual, expected);
   }
-
 }

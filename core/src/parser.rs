@@ -1,5 +1,5 @@
 use crate::ast;
-use crate::ast::{AstTokenPayload, SparseAst, SparseToken};
+use crate::ast::{AstTokenPayload, SparseToken};
 use crate::declaration::{Context, Declaration, Type};
 use crate::error::{CompilerError, ToCompilerError};
 use crate::token::{Token, TokenPayload};
@@ -19,6 +19,7 @@ pub enum Precedence {
 struct Infix {
     token: Token,
     precedence: Precedence,
+    /// How to handle local declarations with 2 or 3 args?
     req_args_count: usize,
     optional_type: bool,
     is_statement: bool,
@@ -30,13 +31,35 @@ enum Symbol {
     Finished(ast::Node<SparseToken>),
 }
 
+impl Symbol {
+    pub fn is_type_decl(&self) -> bool {
+        if let Symbol::Raw(token) = self {
+            token.token == TokenPayload::TypeDeclaration
+        } else {
+            false
+        }
+    }
+}
+
 #[derive(Debug)]
 struct ParseStack {
+    // (Symbol, is type)
     pub symbol: Vec<(Symbol, bool)>,
     pub infix: Vec<Infix>,
 }
 
 impl ParseStack {
+    pub fn new() -> Self {
+        Self {
+            symbol: Vec::new(),
+            infix: Vec::new(),
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.infix.is_empty() && self.symbol.is_empty()
+    }
+
     /// The lifetime corresponds to the lifetime of the closure given hold by the ParseStack or by this function
     pub fn pop_symbol_as_node(&mut self) -> Option<(ast::Node<SparseToken>, bool)> {
         match self.symbol.pop() {
@@ -60,9 +83,7 @@ impl ParseStack {
             }),
         }
     }
-}
 
-impl ParseStack {
     /// Check if the last infix should be astified
     pub fn check_precedence(&self, precedence: &Precedence) -> bool {
         match self.infix.last() {
@@ -84,12 +105,13 @@ impl ParseStack {
             .fold(0, |acc, _| acc + 1);
         let available_symbols = self.symbol.len() + self.infix.len();
         // Find types
-        let optional_symbols = self
+        // As each TypeDeclaration eats a type token
+        let number_of_types = self
             .symbol
             .iter()
             .filter(|sym| !sym.1)
             .fold(0, |acc, _| acc + 1);
-        available_symbols - left_braces - optional_symbols == needed_symbols + 1
+        available_symbols - left_braces - number_of_types == needed_symbols + 1
     }
 
     pub fn last_symbol_is(&self, payload: &TokenPayload) -> bool {
@@ -232,18 +254,42 @@ pub fn is_known_type(_context: &Context, ident: &str) -> bool {
     }
 }
 
-/// Turns a slice of tokens into an ast.
+#[derive(Debug)]
+pub struct ParserState {
+    token_start: Option<usize>,
+    stack: ParseStack,
+}
+
+impl ParserState {
+    pub fn new() -> Self {
+        Self {
+            token_start: Some(0),
+            stack: ParseStack::new(),
+        }
+    }
+}
+
+/// Returns a single statement using the state as for generator-like behavior.
+/// Turns a slice of tokens into an statement.
 /// Using [Shunting-yard algorithm](https://en.wikipedia.org/wiki/Shunting-yard_algorithm#/media/File:Shunting_yard.svg)
-pub fn parse(context: &mut Context, tokens: &[Token]) -> Result<SparseAst, CompilerError> {
-    let mut stack = ParseStack {
-        infix: Vec::new(),
-        symbol: Vec::new(),
+pub fn parse(
+    state: ParserState,
+    context: &mut Context,
+    tokens: &[Token],
+) -> Result<Option<(ast::Node<SparseToken>, ParserState)>, CompilerError> {
+    let ParserState {
+        mut stack,
+        token_start,
+    } = state;
+
+    let token_start = if let Some(token_start) = token_start {
+        token_start
+    } else {
+        return Ok(None);
     };
-
     let mut expect_function_as_variable = false;
-    let mut statements = Vec::new();
 
-    for token in tokens.iter() {
+    for (i, token) in tokens[token_start..].iter().enumerate() {
         match &token.token {
             TokenPayload::ParenthesesL => stack.infix.push(Infix {
                 token: token.clone(),
@@ -274,11 +320,18 @@ pub fn parse(context: &mut Context, tokens: &[Token]) -> Result<SparseAst, Compi
                     stack.symbol.push((Symbol::Raw(token.clone()), true));
                 } else {
                     if stack.is_completable() {
-                        statements.push(create_statement(context, &mut stack)?);
+                        let statement = create_statement(context, &mut stack)?;
+                        return Ok(Some((
+                            statement,
+                            ParserState {
+                                token_start: Some(token_start + i),
+                                stack,
+                            },
+                        )));
                     }
                     match context.declarations.get(ident) {
                         None => {
-                            if !(stack.infix.is_empty() && stack.symbol.is_empty()) {
+                            if !stack.is_empty() {
                                 if stack.last_symbol_is(&TokenPayload::TypeDeclaration)
                                     || stack.last_operator_is(&TokenPayload::Cast)
                                 {
@@ -290,13 +343,16 @@ pub fn parse(context: &mut Context, tokens: &[Token]) -> Result<SparseAst, Compi
                                     } else {
                                         return Err(CompilerError::from_token::<Token>(
                                             token,
-                                            format!("Type {} was not defined.", ident),
+                                            format!("[P1] Type {} was not defined.", ident),
                                         ));
                                     }
                                 } else {
                                     return Err(CompilerError::from_token::<Token>(
                                         token,
-                                        format!("Symbol {} was not defined.", ident),
+                                        format!(
+                                            "[P2] Symbol {} was not defined. Stack.symbol: {:?}",
+                                            ident, stack.symbol
+                                        ),
                                     ));
                                 }
                             } else {
@@ -306,7 +362,9 @@ pub fn parse(context: &mut Context, tokens: &[Token]) -> Result<SparseAst, Compi
                         }
                         Some(declaration) => {
                             if declaration.req_args_count() == 0 {
-                                stack.symbol.push((Symbol::Raw(token.clone()), true));
+                                stack
+                                    .symbol
+                                    .push((Symbol::Raw(token.clone()), !declaration.is_type()));
                             } else {
                                 stack.infix.push(Infix {
                                     token: token.clone(),
@@ -323,9 +381,19 @@ pub fn parse(context: &mut Context, tokens: &[Token]) -> Result<SparseAst, Compi
             }
             TokenPayload::Integer(_) => {
                 if stack.is_completable() {
-                    statements.push(create_statement(context, &mut stack)?);
+                    let statement = create_statement(context, &mut stack)?;
+                    stack.symbol.push((Symbol::Raw(token.clone()), true));
+
+                    return Ok(Some((
+                        statement,
+                        ParserState {
+                            token_start: Some(token_start + i + 1),
+                            stack,
+                        },
+                    )));
+                } else {
+                    stack.symbol.push((Symbol::Raw(token.clone()), true));
                 }
-                stack.symbol.push((Symbol::Raw(token.clone()), true));
             }
             TokenPayload::DefineLocal => {
                 if stack.symbol.is_empty() {
@@ -418,17 +486,21 @@ pub fn parse(context: &mut Context, tokens: &[Token]) -> Result<SparseAst, Compi
     }
 
     if stack.is_completable() {
-        statements.push(create_statement(context, &mut stack)?);
-    }
-
-    if !stack.symbol.is_empty() {
-        return Err(CompilerError::global(&format!(
-            "Parser could not process all tokens. Remaining are {:?}",
-            stack.symbol
+        let statement = create_statement(context, &mut stack)?;
+        return Ok(Some((
+            statement,
+            ParserState {
+                token_start: None,
+                stack,
+            },
         )));
     }
 
-    Ok(ast::Ast { statements })
+    let tokens = stack.symbol.iter().map(|(s, _)| s).collect::<Vec<_>>();
+    Err(CompilerError::global(&format!(
+        "Parser could not process all tokens. Remaining are {:?}",
+        tokens
+    )))
 }
 
 #[cfg(test)]
@@ -436,13 +508,110 @@ mod specs {
     use super::*;
     use ast::{IntegerStub, LexerTokenPayloadStub, Node, StringStub};
     use TokenPayload::*;
+    type SparseNode = Node<SparseToken>;
+
+    #[test]
+    fn stack_is_completed_milestone_5_mvp() {
+        use Precedence::*;
+        use Symbol::Raw;
+        use TokenPayload::*;
+        let stack = ParseStack {
+            symbol: vec![
+                (Raw(Token::stub(Ident("a".to_owned()))), true),
+                (Raw(Token::stub(TypeDeclaration)), false),
+                (Raw(Token::stub(Ident("i16".to_owned()))), false),
+                (Raw(Token::stub(Integer(3))), true),
+            ],
+            infix: vec![Infix {
+                token: Token::stub(DefineLocal),
+                precedence: PCall,
+                req_args_count: 2,
+                optional_type: true,
+                is_statement: true,
+            }],
+        };
+
+        assert!(stack.is_completable());
+    }
+
+    #[test]
+    fn stack_is_completed_milestone_5_main() {
+        use Precedence::*;
+        use Symbol::Raw;
+        use TokenPayload::*;
+        let stack = ParseStack {
+            symbol: vec![
+                (Raw(Token::stub(Ident("a".to_owned()))), true),
+                (Raw(Token::stub(TypeDeclaration)), false),
+                (Raw(Token::stub(Ident("i32".to_owned()))), false),
+            ],
+            infix: vec![Infix {
+                token: Token::stub(DefineLocal),
+                precedence: PCall,
+                req_args_count: 2,
+                optional_type: true,
+                is_statement: true,
+            }],
+        };
+
+        assert!(!stack.is_completable());
+    }
+
+    #[test]
+    fn stack_is_completed_milestone_5_main_complete() {
+        use Precedence::*;
+        use Symbol::Raw;
+        use TokenPayload::*;
+        let stack = ParseStack {
+            symbol: vec![
+                (Raw(Token::stub(Ident("a".to_owned()))), true),
+                (Raw(Token::stub(TypeDeclaration)), false),
+                (Raw(Token::stub(Ident("i32".to_owned()))), false),
+                (Raw(Token::stub(Integer(3))), true),
+            ],
+            infix: vec![Infix {
+                token: Token::stub(DefineLocal),
+                precedence: PCall,
+                req_args_count: 2,
+                optional_type: true,
+                is_statement: true,
+            }],
+        };
+
+        assert!(stack.is_completable());
+    }
+
+    fn create_stub(tokens: &[TokenPayload]) -> Vec<Token> {
+        tokens
+            .into_iter()
+            .map(|t| Token::stub(t.clone()))
+            .collect::<Vec<_>>()
+    }
+
+    fn check_statement(
+        state: ParserState,
+        context: &mut Context,
+        tokens: &[TokenPayload],
+        is_final: bool,
+    ) -> (SparseNode, ParserState) {
+        let statement = parse(state, context, &create_stub(tokens));
+        assert_ok!(statement);
+        let statement = statement.unwrap();
+        assert!(statement.is_some());
+        let (statement, state) = statement.unwrap();
+        if is_final {
+            assert!(state.token_start.is_none());
+            assert!(state.stack.infix.is_empty());
+            assert!(state.stack.symbol.is_empty());
+        } else {
+            assert!(state.token_start.is_some());
+        }
+        (statement, state)
+    }
+
     #[test]
     fn milestone_1() {
-        let tokens = vec![
-            Token::stub(Integer(42)),
-            Token::stub(Pipe),
-            Token::stub(Ident("stdout".to_string())),
-        ];
+        let tokens = vec![Integer(42), Pipe, Ident("stdout".to_string())];
 
         let mut context = Context {
             declarations: hashmap! {
@@ -450,18 +619,14 @@ mod specs {
             },
         };
 
-        let actual = parse(&mut context, &tokens);
-        assert!(actual.is_ok());
-        let actual = actual.unwrap();
+        let (actual, _) = check_statement(ParserState::new(), &mut context, &tokens, true);
 
-        let expected = ast::Ast {
-            statements: vec![ast::Node {
-                root: LexerTokenPayloadStub::stub(Pipe),
-                args: vec![
-                    ast::Node::leaf(IntegerStub::stub(42)),
-                    ast::Node::leaf(StringStub::stub("stdout")),
-                ],
-            }],
+        let expected = ast::Node {
+            root: LexerTokenPayloadStub::stub(Pipe),
+            args: vec![
+                ast::Node::leaf(IntegerStub::stub(42)),
+                ast::Node::leaf(StringStub::stub("stdout")),
+            ],
         };
 
         assert_eq!(actual, expected);
@@ -470,10 +635,10 @@ mod specs {
     #[test]
     fn function_with_braces() {
         let tokens = vec![
-            Token::stub(Ident("stdout".to_string())),
-            Token::stub(ParenthesesL),
-            Token::stub(Integer(42)),
-            Token::stub(ParenthesesR),
+            Ident("stdout".to_string()),
+            ParenthesesL,
+            Integer(42),
+            ParenthesesR,
         ];
 
         let mut context = Context {
@@ -482,18 +647,13 @@ mod specs {
             },
         };
 
-        let actual = parse(&mut context, &tokens);
+        let (actual, _) = check_statement(ParserState::new(), &mut context, &tokens, true);
 
-        assert!(actual.is_ok());
-        let actual = actual.unwrap();
-
-        let expected = ast::Ast {
-            statements: vec![ast::Node {
-                root: StringStub::stub("stdout"),
-                args: vec![ast::Node {
-                    root: IntegerStub::stub(42),
-                    args: vec![],
-                }],
+        let expected = ast::Node {
+            root: StringStub::stub("stdout"),
+            args: vec![ast::Node {
+                root: IntegerStub::stub(42),
+                args: vec![],
             }],
         };
 
@@ -502,28 +662,20 @@ mod specs {
 
     #[test]
     fn function_without_braces() {
-        let tokens = vec![
-            Token::stub(Ident("stdout".to_string())),
-            Token::stub(Integer(42)),
-        ];
+        let tokens = vec![Ident("stdout".to_string()), Integer(42)];
 
         let mut context = Context {
             declarations: hashmap! {
                 "stdout".to_owned() => Declaration::function(Type::Void, vec![Type::Int32], true)
             },
         };
+        let (actual, _) = check_statement(ParserState::new(), &mut context, &tokens, true);
 
-        let actual = parse(&mut context, &tokens);
-
-        assert!(actual.is_ok());
-        let actual = actual.unwrap();
-        let expected = ast::Ast {
-            statements: vec![ast::Node {
-                root: StringStub::stub("stdout"),
-                args: vec![ast::Node {
-                    root: IntegerStub::stub(42),
-                    args: vec![],
-                }],
+        let expected = ast::Node {
+            root: StringStub::stub("stdout"),
+            args: vec![ast::Node {
+                root: IntegerStub::stub(42),
+                args: vec![],
             }],
         };
 
@@ -532,12 +684,7 @@ mod specs {
 
     #[test]
     fn milestone_3_print_sum() {
-        let tokens = vec![
-            Token::stub(Ident("stdout".to_string())),
-            Token::stub(Integer(3)),
-            Token::stub(Add),
-            Token::stub(Integer(5)),
-        ];
+        let tokens = vec![Ident("stdout".to_string()), Integer(3), Add, Integer(5)];
 
         let mut context = Context {
             declarations: hashmap! {
@@ -545,22 +692,18 @@ mod specs {
             },
         };
 
-        let actual = parse(&mut context, &tokens);
+        let (actual, _) = check_statement(ParserState::new(), &mut context, &tokens, true);
 
-        assert!(actual.is_ok());
-        let actual = actual.unwrap();
-        let actual = ast::DebugAst::from(actual);
+        let actual = ast::DebugNode::from(actual);
 
-        let expected = ast::DebugAst {
-            statements: vec![Node {
-                root: AstTokenPayload::from(Ident("stdout".to_string())).unwrap(),
-                args: vec![Node {
-                    root: AstTokenPayload::from(Add).unwrap(),
-                    args: vec![
-                        Node::leaf(AstTokenPayload::from(Integer(3)).unwrap()),
-                        Node::leaf(AstTokenPayload::from(Integer(5)).unwrap()),
-                    ],
-                }],
+        let expected = ast::DebugNode {
+            root: AstTokenPayload::from(Ident("stdout".to_string())).unwrap(),
+            args: vec![Node {
+                root: AstTokenPayload::from(Add).unwrap(),
+                args: vec![
+                    Node::leaf(AstTokenPayload::from(Integer(3)).unwrap()),
+                    Node::leaf(AstTokenPayload::from(Integer(5)).unwrap()),
+                ],
             }],
         };
 
@@ -571,12 +714,12 @@ mod specs {
     fn milestone_3_print_term() {
         // stdout 3 + 5*7
         let tokens = vec![
-            Token::stub(Ident("stdout".to_string())),
-            Token::stub(Integer(3)),
-            Token::stub(Add),
-            Token::stub(Integer(5)),
-            Token::stub(Multiply),
-            Token::stub(Integer(7)),
+            Ident("stdout".to_string()),
+            Integer(3),
+            Add,
+            Integer(5),
+            Multiply,
+            Integer(7),
         ];
 
         let mut context = Context {
@@ -585,27 +728,22 @@ mod specs {
             },
         };
 
-        let actual = parse(&mut context, &tokens);
+        let (actual, _) = check_statement(ParserState::new(), &mut context, &tokens, true);
 
-        assert!(actual.is_ok());
-        let actual = actual.unwrap();
-
-        let expected = ast::SparseAst {
-            statements: vec![Node {
-                root: StringStub::stub("stdout"),
-                args: vec![Node {
-                    root: LexerTokenPayloadStub::stub(Add),
-                    args: vec![
-                        Node::leaf(IntegerStub::stub(3)),
-                        Node {
-                            root: LexerTokenPayloadStub::stub(Multiply),
-                            args: vec![
-                                Node::leaf(IntegerStub::stub(5)),
-                                Node::leaf(IntegerStub::stub(7)),
-                            ],
-                        },
-                    ],
-                }],
+        let expected = SparseNode {
+            root: StringStub::stub("stdout"),
+            args: vec![Node {
+                root: LexerTokenPayloadStub::stub(Add),
+                args: vec![
+                    Node::leaf(IntegerStub::stub(3)),
+                    Node {
+                        root: LexerTokenPayloadStub::stub(Multiply),
+                        args: vec![
+                            Node::leaf(IntegerStub::stub(5)),
+                            Node::leaf(IntegerStub::stub(7)),
+                        ],
+                    },
+                ],
             }],
         };
 
@@ -616,14 +754,14 @@ mod specs {
     fn milestone_3_print_term_with_braces() {
         // stdout (3+5)*7
         let tokens = vec![
-            Token::stub(Ident("stdout".to_string())),
-            Token::stub(ParenthesesL),
-            Token::stub(Integer(3)),
-            Token::stub(Add),
-            Token::stub(Integer(5)),
-            Token::stub(ParenthesesR),
-            Token::stub(Multiply),
-            Token::stub(Integer(7)),
+            Ident("stdout".to_string()),
+            ParenthesesL,
+            Integer(3),
+            Add,
+            Integer(5),
+            ParenthesesR,
+            Multiply,
+            Integer(7),
         ];
 
         let mut context = Context {
@@ -632,28 +770,22 @@ mod specs {
             },
         };
 
-        let actual = parse(&mut context, &tokens);
+        let (actual, _) = check_statement(ParserState::new(), &mut context, &tokens, true);
 
-        assert!(actual.is_ok());
-        let actual = actual.unwrap();
-        // let actual = ast::DebugAst::from(actual);
-
-        let expected = ast::SparseAst {
-            statements: vec![Node {
-                root: StringStub::stub("stdout"),
-                args: vec![Node {
-                    root: LexerTokenPayloadStub::stub(Multiply),
-                    args: vec![
-                        Node {
-                            root: LexerTokenPayloadStub::stub(Add),
-                            args: vec![
-                                Node::leaf(IntegerStub::stub(3)),
-                                Node::leaf(IntegerStub::stub(5)),
-                            ],
-                        },
-                        Node::leaf(IntegerStub::stub(7)),
-                    ],
-                }],
+        let expected = SparseNode {
+            root: StringStub::stub("stdout"),
+            args: vec![Node {
+                root: LexerTokenPayloadStub::stub(Multiply),
+                args: vec![
+                    Node {
+                        root: LexerTokenPayloadStub::stub(Add),
+                        args: vec![
+                            Node::leaf(IntegerStub::stub(3)),
+                            Node::leaf(IntegerStub::stub(5)),
+                        ],
+                    },
+                    Node::leaf(IntegerStub::stub(7)),
+                ],
             }],
         };
 
@@ -680,28 +812,16 @@ mod specs {
             },
         };
 
-        let actual = parse(
-            &mut context,
-            &tokens
-                .into_iter()
-                .map(|t| Token::stub(t))
-                .collect::<Vec<_>>(),
-        );
+        let (actual, _) = check_statement(ParserState::new(), &mut context, &tokens, true);
 
-        assert!(actual.is_ok());
-        let actual = actual.unwrap();
-        // let actual = ast::DebugAst::from(actual);
-
-        let expected = ast::SparseAst {
-            statements: vec![Node {
-                root: StringStub::stub("stdout"),
-                args: vec![Node {
-                    root: StringStub::stub("max"),
-                    args: vec![
-                        Node::leaf(IntegerStub::stub(3)),
-                        Node::leaf(IntegerStub::stub(5)),
-                    ],
-                }],
+        let expected = SparseNode {
+            root: StringStub::stub("stdout"),
+            args: vec![Node {
+                root: StringStub::stub("max"),
+                args: vec![
+                    Node::leaf(IntegerStub::stub(3)),
+                    Node::leaf(IntegerStub::stub(5)),
+                ],
             }],
         };
 
@@ -736,52 +856,40 @@ mod specs {
             },
         };
 
-        let actual = parse(
-            &mut context,
-            &tokens
-                .into_iter()
-                .map(|t| Token::stub(t))
-                .collect::<Vec<_>>(),
-        );
+        let (actual, _) = check_statement(ParserState::new(), &mut context, &tokens, true);
 
-        assert!(actual.is_ok());
-        let actual = actual.unwrap();
-        // let actual = ast::DebugAst::from(actual);
-
-        let expected = SparseAst {
-            statements: vec![Node {
-                root: StringStub::stub("stdout"),
-                args: vec![Node {
-                    root: StringStub::stub("max"),
-                    args: vec![
-                        Node {
-                            root: LexerTokenPayloadStub::stub(Add),
-                            args: vec![
-                                Node::leaf(IntegerStub::stub(3)),
-                                Node {
-                                    root: LexerTokenPayloadStub::stub(Multiply),
-                                    args: vec![
-                                        Node::leaf(IntegerStub::stub(5)),
-                                        Node::leaf(IntegerStub::stub(-7)),
-                                    ],
-                                },
-                            ],
-                        },
-                        Node {
-                            root: LexerTokenPayloadStub::stub(Subtract),
-                            args: vec![
-                                Node {
-                                    root: LexerTokenPayloadStub::stub(Multiply),
-                                    args: vec![
-                                        Node::leaf(IntegerStub::stub(11)),
-                                        Node::leaf(IntegerStub::stub(13)),
-                                    ],
-                                },
-                                Node::leaf(IntegerStub::stub(15)),
-                            ],
-                        },
-                    ],
-                }],
+        let expected = SparseNode {
+            root: StringStub::stub("stdout"),
+            args: vec![Node {
+                root: StringStub::stub("max"),
+                args: vec![
+                    Node {
+                        root: LexerTokenPayloadStub::stub(Add),
+                        args: vec![
+                            Node::leaf(IntegerStub::stub(3)),
+                            Node {
+                                root: LexerTokenPayloadStub::stub(Multiply),
+                                args: vec![
+                                    Node::leaf(IntegerStub::stub(5)),
+                                    Node::leaf(IntegerStub::stub(-7)),
+                                ],
+                            },
+                        ],
+                    },
+                    Node {
+                        root: LexerTokenPayloadStub::stub(Subtract),
+                        args: vec![
+                            Node {
+                                root: LexerTokenPayloadStub::stub(Multiply),
+                                args: vec![
+                                    Node::leaf(IntegerStub::stub(11)),
+                                    Node::leaf(IntegerStub::stub(13)),
+                                ],
+                            },
+                            Node::leaf(IntegerStub::stub(15)),
+                        ],
+                    },
+                ],
             }],
         };
 
@@ -797,29 +905,16 @@ mod specs {
             Integer(3),
         ];
 
-        let mut context = Context {
-            declarations: hashmap! {},
-        };
+        let mut context = Context::new();
 
-        let actual = parse(
-            &mut context,
-            &tokens
-                .into_iter()
-                .map(|t| Token::stub(t))
-                .collect::<Vec<_>>(),
-        );
+        let (actual, _) = check_statement(ParserState::new(), &mut context, &tokens, true);
 
-        assert!(actual.is_ok());
-        let actual = actual.unwrap();
-        // let actual = ast::DebugAst::from(actual);
-        let expected = SparseAst {
-            statements: vec![Node {
-                root: LexerTokenPayloadStub::stub(DefineLocal),
-                args: vec![
-                    Node::leaf(StringStub::stub("a")),
-                    Node::leaf(IntegerStub::stub(3)),
-                ],
-            }],
+        let expected = SparseNode {
+            root: LexerTokenPayloadStub::stub(DefineLocal),
+            args: vec![
+                Node::leaf(StringStub::stub("a")),
+                Node::leaf(IntegerStub::stub(3)),
+            ],
         };
         assert_eq!(actual, expected);
         // Declaration
@@ -841,35 +936,21 @@ mod specs {
             Integer(5),
         ];
 
-        let mut context = Context {
-            declarations: hashmap! {},
-        };
+        let mut context = Context::new();
+        let (actual, _) = check_statement(ParserState::new(), &mut context, &tokens, true);
 
-        let actual = parse(
-            &mut context,
-            &tokens
-                .into_iter()
-                .map(|t| Token::stub(t))
-                .collect::<Vec<_>>(),
-        );
-
-        assert!(actual.is_ok());
-        let actual = actual.unwrap();
-        // let actual = ast::DebugAst::from(actual);
-        let expected = SparseAst {
-            statements: vec![Node {
-                root: LexerTokenPayloadStub::stub(DefineLocal),
-                args: vec![
-                    Node::leaf(StringStub::stub("a")),
-                    Node {
-                        root: LexerTokenPayloadStub::stub(Add),
-                        args: vec![
-                            Node::leaf(IntegerStub::stub(3)),
-                            Node::leaf(IntegerStub::stub(5)),
-                        ],
-                    },
-                ],
-            }],
+        let expected = SparseNode {
+            root: LexerTokenPayloadStub::stub(DefineLocal),
+            args: vec![
+                Node::leaf(StringStub::stub("a")),
+                Node {
+                    root: LexerTokenPayloadStub::stub(Add),
+                    args: vec![
+                        Node::leaf(IntegerStub::stub(3)),
+                        Node::leaf(IntegerStub::stub(5)),
+                    ],
+                },
+            ],
         };
         assert_eq!(actual, expected);
         // Declaration
@@ -914,58 +995,59 @@ mod specs {
             },
         };
 
-        let actual = parse(
-            &mut context,
-            &tokens
-                .into_iter()
-                .map(|t| Token::stub(t))
-                .collect::<Vec<_>>(),
-        );
+        let mut actual = Vec::new();
+        // a := 3
+        let (statement, state) = check_statement(ParserState::new(), &mut context, &tokens, false);
+        actual.push(statement);
+        // b := a + 5
+        let (statement, state) = check_statement(state, &mut context, &tokens, false);
+        actual.push(statement);
+        // c := 7
+        let (statement, state) = check_statement(state, &mut context, &tokens, false);
+        actual.push(statement);
+        // stdout max(b,c)
+        let (statement, _) = check_statement(state, &mut context, &tokens, true);
+        actual.push(statement);
 
-        assert!(actual.is_ok());
-        let actual = actual.unwrap();
-        // let actual = ast::DebugAst::from(actual.unwrap());
-        let expected = SparseAst {
-            statements: vec![
-                Node {
-                    root: LexerTokenPayloadStub::stub(DefineLocal),
-                    args: vec![
-                        Node::leaf(StringStub::stub("a")),
-                        Node::leaf(IntegerStub::stub(3)),
-                    ],
-                },
-                Node {
-                    root: LexerTokenPayloadStub::stub(DefineLocal),
+        let expected = vec![
+            Node {
+                root: LexerTokenPayloadStub::stub(DefineLocal),
+                args: vec![
+                    Node::leaf(StringStub::stub("a")),
+                    Node::leaf(IntegerStub::stub(3)),
+                ],
+            },
+            Node {
+                root: LexerTokenPayloadStub::stub(DefineLocal),
+                args: vec![
+                    Node::leaf(StringStub::stub("b")),
+                    Node {
+                        root: LexerTokenPayloadStub::stub(Add),
+                        args: vec![
+                            Node::leaf(StringStub::stub("a")),
+                            Node::leaf(IntegerStub::stub(5)),
+                        ],
+                    },
+                ],
+            },
+            Node {
+                root: LexerTokenPayloadStub::stub(DefineLocal),
+                args: vec![
+                    Node::leaf(StringStub::stub("c")),
+                    Node::leaf(IntegerStub::stub(7)),
+                ],
+            },
+            Node {
+                root: StringStub::stub("stdout"),
+                args: vec![Node {
+                    root: StringStub::stub("max"),
                     args: vec![
                         Node::leaf(StringStub::stub("b")),
-                        Node {
-                            root: LexerTokenPayloadStub::stub(Add),
-                            args: vec![
-                                Node::leaf(StringStub::stub("a")),
-                                Node::leaf(IntegerStub::stub(5)),
-                            ],
-                        },
-                    ],
-                },
-                Node {
-                    root: LexerTokenPayloadStub::stub(DefineLocal),
-                    args: vec![
                         Node::leaf(StringStub::stub("c")),
-                        Node::leaf(IntegerStub::stub(7)),
                     ],
-                },
-                Node {
-                    root: StringStub::stub("stdout"),
-                    args: vec![Node {
-                        root: StringStub::stub("max"),
-                        args: vec![
-                            Node::leaf(StringStub::stub("b")),
-                            Node::leaf(StringStub::stub("c")),
-                        ],
-                    }],
-                },
-            ],
-        };
+                }],
+            },
+        ];
 
         assert_eq!(actual, expected);
 
@@ -1005,35 +1087,30 @@ mod specs {
             },
         };
 
-        let actual = parse(
-            &mut context,
-            &tokens
-                .into_iter()
-                .map(|t| Token::stub(t))
-                .collect::<Vec<_>>(),
-        );
+        let mut actual = Vec::new();
+        // a: i32 := 3
+        let (statement, state) = check_statement(ParserState::new(), &mut context, &tokens, false);
+        actual.push(statement);
+        // stdout a
+        let (statement, _) = check_statement(state, &mut context, &tokens, true);
+        actual.push(statement);
 
-        assert!(actual.is_ok());
-        let actual = actual.unwrap();
+        let expected = [
+            Node {
+                root: LexerTokenPayloadStub::stub(DefineLocal),
+                args: vec![
+                    Node::leaf(StringStub::stub("a")),
+                    Node::leaf(StringStub::stub("i16")),
+                    Node::leaf(IntegerStub::stub(3)),
+                ],
+            },
+            Node {
+                root: StringStub::stub("stdout"),
+                args: vec![Node::leaf(StringStub::stub("a"))],
+            },
+        ];
 
-        let expected = ast::SparseAst {
-            statements: vec![
-                Node {
-                    root: LexerTokenPayloadStub::stub(DefineLocal),
-                    args: vec![
-                        Node::leaf(StringStub::stub("a")),
-                        Node::leaf(StringStub::stub("i16")),
-                        Node::leaf(IntegerStub::stub(3)),
-                    ],
-                },
-                Node {
-                    root: StringStub::stub("stdout"),
-                    args: vec![Node::leaf(StringStub::stub("a"))],
-                },
-            ],
-        };
-
-        assert_eq!(actual, expected);
+        assert_eq!(&actual, &expected);
 
         assert!(context.declarations.get("a").is_some());
         let actual = context.declarations.get("a").unwrap();
@@ -1083,69 +1160,69 @@ mod specs {
             },
         };
 
-        let actual = parse(
-            &mut context,
-            &tokens
-                .into_iter()
-                .map(|t| Token::stub(t))
-                .collect::<Vec<_>>(),
-        );
+        let mut actual = Vec::new();
+        // a: i32 := 3
+        let (statement, state) = check_statement(ParserState::new(), &mut context, &tokens, false);
+        actual.push(statement);
+        // b: i8 := a as i8 + 5
+        let (statement, state) = check_statement(state, &mut context, &tokens, false);
+        actual.push(statement);
+        // c: i8 := 7
+        let (statement, state) = check_statement(state, &mut context, &tokens, false);
+        actual.push(statement);
+        // stdout max(b,c)
+        let (statement, _) = check_statement(state, &mut context, &tokens, true);
+        actual.push(statement);
 
-        assert!(actual.is_ok());
-        let actual = actual.unwrap();
-        // let actual = ast::DebugAst::from(actual.unwrap());
-
-        let expected = ast::SparseAst {
-            statements: vec![
-                Node {
-                    root: LexerTokenPayloadStub::stub(DefineLocal),
-                    args: vec![
-                        Node::leaf(StringStub::stub("a")),
-                        Node::leaf(StringStub::stub("i32")),
-                        Node::leaf(IntegerStub::stub(3)),
-                    ],
-                },
-                Node {
-                    root: LexerTokenPayloadStub::stub(DefineLocal),
+        let expected = [
+            Node {
+                root: LexerTokenPayloadStub::stub(DefineLocal),
+                args: vec![
+                    Node::leaf(StringStub::stub("a")),
+                    Node::leaf(StringStub::stub("i32")),
+                    Node::leaf(IntegerStub::stub(3)),
+                ],
+            },
+            Node {
+                root: LexerTokenPayloadStub::stub(DefineLocal),
+                args: vec![
+                    Node::leaf(StringStub::stub("b")),
+                    Node::leaf(StringStub::stub("i8")),
+                    Node {
+                        root: LexerTokenPayloadStub::stub(Add),
+                        args: vec![
+                            Node {
+                                root: LexerTokenPayloadStub::stub(Cast),
+                                args: vec![
+                                    Node::leaf(StringStub::stub("a")),
+                                    Node::leaf(StringStub::stub("i8")),
+                                ],
+                            },
+                            Node::leaf(IntegerStub::stub(5)),
+                        ],
+                    },
+                ],
+            },
+            Node {
+                root: LexerTokenPayloadStub::stub(DefineLocal),
+                args: vec![
+                    Node::leaf(StringStub::stub("c")),
+                    Node::leaf(StringStub::stub("i8")),
+                    Node::leaf(IntegerStub::stub(7)),
+                ],
+            },
+            Node {
+                root: StringStub::stub("stdout"),
+                args: vec![Node {
+                    root: StringStub::stub("max"),
                     args: vec![
                         Node::leaf(StringStub::stub("b")),
-                        Node::leaf(StringStub::stub("i8")),
-                        Node {
-                            root: LexerTokenPayloadStub::stub(Add),
-                            args: vec![
-                                Node {
-                                    root: LexerTokenPayloadStub::stub(Cast),
-                                    args: vec![
-                                        Node::leaf(StringStub::stub("a")),
-                                        Node::leaf(StringStub::stub("i8")),
-                                    ],
-                                },
-                                Node::leaf(IntegerStub::stub(5)),
-                            ],
-                        },
-                    ],
-                },
-                Node {
-                    root: LexerTokenPayloadStub::stub(DefineLocal),
-                    args: vec![
                         Node::leaf(StringStub::stub("c")),
-                        Node::leaf(StringStub::stub("i8")),
-                        Node::leaf(IntegerStub::stub(7)),
                     ],
-                },
-                Node {
-                    root: StringStub::stub("stdout"),
-                    args: vec![Node {
-                        root: StringStub::stub("max"),
-                        args: vec![
-                            Node::leaf(StringStub::stub("b")),
-                            Node::leaf(StringStub::stub("c")),
-                        ],
-                    }],
-                },
-            ],
-        };
+                }],
+            },
+        ];
 
-        assert_eq!(actual, expected);
+        assert_eq!(&actual, &expected);
     }
 }

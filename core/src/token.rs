@@ -30,9 +30,32 @@ pub enum TokenPayload {
     // Dot,
     ParenthesesL,
     ParenthesesR,
-    TypeDeclaration,
-    // BraceL,
-    // BraceR,
+    TypeDeclaration, //
+                     // BraceL,
+                     // BraceR,
+}
+
+impl fmt::Display for TokenPayload {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        use TokenPayload::*;
+        let string = match self {
+            Ident(ident) => ident.to_owned(),
+            Integer(value) => format!("{}", value),
+            DefineLocal => ":=".to_owned(),
+            Cast => "as".to_owned(),
+            Pipe => "|".to_owned(),
+            Multiply => "*".to_owned(),
+            Divide => "/".to_owned(),
+            Add => "+".to_owned(),
+            Subtract => "-".to_owned(),
+            Remainder => "%".to_owned(),
+            Delimiter => ", ".to_owned(),
+            ParenthesesL => "(".to_owned(),
+            ParenthesesR => ")".to_owned(),
+            TypeDeclaration => ": ".to_owned(),
+        };
+        write!(f, "{:?}", string)
+    }
 }
 
 impl TokenPayload {
@@ -54,7 +77,7 @@ pub struct Token {
 
 impl fmt::Debug for Token {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{:?}", self.token)
+        write!(f, "{}", self.token)
     }
 }
 
