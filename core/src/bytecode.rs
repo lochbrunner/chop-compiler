@@ -239,8 +239,8 @@ pub fn compile(context: &Context, ast: DenseAst) -> Result<Vec<ByteCode>, Compil
 mod specs {
     use super::*;
     use crate::ast::{DenseAst, DenseToken, LexerTokenPayloadStub, Node};
+    use crate::declaration::Declaration;
     use crate::token::TokenPayload;
-    use crate::Declaration;
     use ByteCode::*;
     use TokenPayload::*;
 

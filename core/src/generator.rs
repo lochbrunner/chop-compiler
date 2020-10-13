@@ -1,5 +1,9 @@
-use crate::ast::{AstTokenPayload, DenseAst, Node, SparseAst, SparseToken};
+//! This module is deprecated, and will be replaced by meta programming later.
+use crate::ast::{AstTokenPayload, Node, SparseToken};
 use crate::CompilerError;
+
+#[cfg(test)]
+use crate::ast::DenseAst;
 
 pub fn generate_sparse(statement: Node<SparseToken>) -> Result<Node<SparseToken>, CompilerError> {
     match statement.root.payload {
@@ -19,16 +23,8 @@ pub fn generate_sparse(statement: Node<SparseToken>) -> Result<Node<SparseToken>
     }
 }
 
-pub fn generate_sparse_multiple(ast: SparseAst) -> Result<SparseAst, CompilerError> {
-    let statements = ast
-        .statements
-        .into_iter()
-        .map(generate_sparse)
-        .collect::<Result<Vec<_>, _>>()?;
-    Ok(SparseAst { statements })
-}
-
 /// Fills out the macros and runs all the custom compiler stuff.
+#[cfg(test)]
 pub fn generate(ast: DenseAst) -> Result<DenseAst, CompilerError> {
     let statements = ast
         .statements

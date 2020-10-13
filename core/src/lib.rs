@@ -12,7 +12,7 @@ mod simplifier;
 mod specializer;
 pub mod token;
 pub use ast::DenseAst;
-use declaration::{Context, Declaration, Type};
+use declaration::Context;
 pub use error::CompilerError;
 
 pub use bytecode::ByteCode;
@@ -21,18 +21,7 @@ pub use bytecode::ByteCode;
 extern crate maplit;
 
 pub fn build(code: &str) -> Result<Vec<ByteCode>, CompilerError> {
-    // Milestone 5 context
-    let mut context = Context {
-        declarations: hashmap! {
-            "stdout".to_string() => Declaration::full_template_statement(1),
-            "max".to_string() => Declaration::full_template_function(2),
-            "min".to_string() => Declaration::full_template_function(2),
-            "i8".to_string() => Declaration::variable(Type::Type),
-            "i16".to_string() => Declaration::variable(Type::Type),
-            "i32".to_string() => Declaration::variable(Type::Type),
-            "i64".to_string() => Declaration::variable(Type::Type),
-        },
-    };
+    let mut context = Context::default();
 
     let tokens = lexer::lex(code)?;
     let mut state = parser::ParserState::new();
@@ -52,7 +41,7 @@ pub fn build(code: &str) -> Result<Vec<ByteCode>, CompilerError> {
 mod e2e {
     use super::*;
     use crate::ast::DenseAst;
-    use declaration::Type;
+    use declaration::{Declaration, Type};
     use ByteCode::*;
 
     static HEADER: [ByteCode; 3] = [Alloca(Type::Int32), PushInt32(0), Store(Type::Int32, 0)];
@@ -235,5 +224,43 @@ mod e2e {
         ];
 
         assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn milestone_5_explicit() {
+        use self::Type::*;
+        let code = "#!/usr/bin/env ichop
+
+        a: i32 := 3
+        b: i8 := a as i8 + 5 as i8
+        c: i8 := 7 as i8
+        
+        stdout max(b,c)";
+
+        let mut context = Context {
+            declarations: hashmap! {
+                // "stdout".to_string() => Declaration::full_template_statement(1),
+                "stdout".to_string() => Declaration::function(Void, vec![Int8], true),
+                "max".to_string() => Declaration::full_template_function(2),
+                "min".to_string() => Declaration::full_template_function(2),
+                "i8".to_string() => Declaration::variable(Type),
+                "i32".to_string() => Declaration::variable(Type),
+            },
+        };
+        let tokens = lexer::lex(code).unwrap();
+        let mut state = parser::ParserState::new();
+        let mut ast = DenseAst::new();
+        while let Some((statement, new_state)) =
+            parser::parse(state, &mut context, &tokens).unwrap()
+        {
+            state = new_state;
+            let statement = generator::generate_sparse(statement).unwrap();
+            let statement = specializer::specialize(statement, &mut context).unwrap();
+            ast.statements.push(statement);
+        }
+        let ast = simplifier::simplify(ast).unwrap();
+        let actual = bytecode::compile(&context, ast);
+
+        assert_ok!(actual);
     }
 }

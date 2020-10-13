@@ -89,6 +89,34 @@ fn get_last_item_rep_gen(stack: &mut Vec<StackItem>) -> Result<String, CompilerE
     }
 }
 
+fn get_last_item_rep_i8(stack: &mut Vec<StackItem>) -> Result<String, CompilerError> {
+    match stack.pop() {
+        None => Err(CompilerError::global("Missing argument on stack")),
+        Some(item) => match item {
+            StackItem::Int8(v) => Ok(v.to_string()),
+            StackItem::Ref(r) => Ok(format!("%{}", r)),
+            _ => Err(CompilerError::global(&format!(
+                "Expected stack item of type i8, but got {:?}",
+                item
+            ))),
+        },
+    }
+}
+
+fn get_last_item_rep_i16(stack: &mut Vec<StackItem>) -> Result<String, CompilerError> {
+    match stack.pop() {
+        None => Err(CompilerError::global("Missing argument on stack")),
+        Some(item) => match item {
+            StackItem::Int16(v) => Ok(v.to_string()),
+            StackItem::Ref(r) => Ok(format!("%{}", r)),
+            _ => Err(CompilerError::global(&format!(
+                "Expected stack item of type i16, but got {:?}",
+                item
+            ))),
+        },
+    }
+}
+
 fn get_last_item_rep_i32(stack: &mut Vec<StackItem>) -> Result<String, CompilerError> {
     match stack.pop() {
         None => Err(CompilerError::global("Missing argument on stack")),
@@ -96,7 +124,21 @@ fn get_last_item_rep_i32(stack: &mut Vec<StackItem>) -> Result<String, CompilerE
             StackItem::Int32(v) => Ok(v.to_string()),
             StackItem::Ref(r) => Ok(format!("%{}", r)),
             _ => Err(CompilerError::global(&format!(
-                "Expected stack item of type Int32, but got {:?}",
+                "Expected stack item of type i32, but got {:?}",
+                item
+            ))),
+        },
+    }
+}
+
+fn get_last_item_rep_i64(stack: &mut Vec<StackItem>) -> Result<String, CompilerError> {
+    match stack.pop() {
+        None => Err(CompilerError::global("Missing argument on stack")),
+        Some(item) => match item {
+            StackItem::Int64(v) => Ok(v.to_string()),
+            StackItem::Ref(r) => Ok(format!("%{}", r)),
+            _ => Err(CompilerError::global(&format!(
+                "Expected stack item of type i64, but got {:?}",
                 item
             ))),
         },
@@ -215,19 +257,25 @@ pub fn export(instructions: &[ByteCode], source_filename: &str) -> Result<String
     let mut register_counter = 0;
 
     // Find all alloca
-    for _ in instructions
-        .iter()
-        .filter(|s| **s == ByteCode::Alloca(Type::Int32))
-    {
-        register_counter += 1;
-        code.push_str(&format!("  %{} = alloca i32, align 4\n", register_counter));
+    for instruction in instructions.iter() {
+        if let ByteCode::Alloca(dtype) = instruction {
+            register_counter += 1;
+            code.push_str(&format!(
+                "  %{} = alloca {}, align 4\n",
+                register_counter,
+                dtype.to_llvm()
+            ));
+        }
     }
 
     let mut stack: Vec<StackItem> = Vec::new();
     for instruction in instructions.iter() {
         match instruction {
             ByteCode::StdOut => call_stdout(&mut register_counter, &mut stack, &mut code)?,
+            ByteCode::PushInt8(v) => stack.push(StackItem::Int8(*v)),
+            ByteCode::PushInt16(v) => stack.push(StackItem::Int16(*v)),
             ByteCode::PushInt32(v) => stack.push(StackItem::Int32(*v)),
+            ByteCode::PushInt64(v) => stack.push(StackItem::Int64(*v)),
             ByteCode::Call2(ident, return_type, arg_type_0, arg_type_1) => {
                 call_function_2_gen(
                     ident,
@@ -240,7 +288,19 @@ pub fn export(instructions: &[ByteCode], source_filename: &str) -> Result<String
                 )?;
             }
             ByteCode::Store(op_type, index) => {
-                let a = get_last_item_rep_i32(&mut stack)?;
+                // let a = get_last_item_rep_i32(&mut stack)?;
+                let a = match op_type {
+                    Type::Int8 => get_last_item_rep_i8(&mut stack)?,
+                    Type::Int16 => get_last_item_rep_i16(&mut stack)?,
+                    Type::Int32 => get_last_item_rep_i32(&mut stack)?,
+                    Type::Int64 => get_last_item_rep_i64(&mut stack)?,
+                    _ => {
+                        return Err(CompilerError::global(&format!(
+                            "Can not store symbol of type {:?}",
+                            op_type
+                        )));
+                    }
+                };
                 store(*index + 1, a, op_type, &mut code);
             }
             ByteCode::Alloca(_) => (),
@@ -279,12 +339,6 @@ pub fn export(instructions: &[ByteCode], source_filename: &str) -> Result<String
             )?,
             ByteCode::CastInt(from, to) => {
                 cast(from, to, &mut register_counter, &mut stack, &mut code)?;
-            }
-            _ => {
-                return Err(CompilerError::global(&format!(
-                    "Unknown instruction {:?}",
-                    instruction
-                )))
             }
         }
     }

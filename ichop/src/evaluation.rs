@@ -8,7 +8,7 @@ enum StackItem {
     Int32(i32),
     Int16(i16),
     Int8(i8),
-    Float(i64),
+    // Float(i64),
 }
 
 fn pop_generic(stack: &mut Vec<StackItem>) -> Result<StackItem, String> {
@@ -103,7 +103,6 @@ pub fn evaluate(code: &[ByteCode], writer: &mut dyn Write) -> Result<(), String>
                     StackItem::Int16(v) => v.to_string(),
                     StackItem::Int32(v) => v.to_string(),
                     StackItem::Int64(v) => v.to_string(),
-                    _ => return Err(format!("Type {:?} is not implemented yet!", v)),
                 };
                 if let Err(error) = writeln!(writer, "{}", s) {
                     return Err(format!("Error writing to stdout: {}", error));

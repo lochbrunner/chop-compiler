@@ -1,0 +1,25 @@
+name: milestones-ichop
+
+on: [push, pull_request]
+
+jobs:
+    test:
+  
+      runs-on: ubuntu-latest
+  
+      steps:
+      - uses: actions/checkout@v1
+      - name: Setup Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly
+          override: true
+      - name: Install LLVM
+        run: sudo apt-get install llvm-dev
+      - name: Build
+        uses: actions-rs/cargo@v1
+        with:
+          command: build
+          args: --release
+      - name: Test
+        run: ./milestones/test.sh --only-ichop

@@ -1,6 +1,7 @@
 
 [![GitHub Actions status](https://github.com/lochbrunner/chop-compiler/workflows/unit-test/badge.svg)](https://github.com/lochbrunner/chop-compiler/actions?workflow=unit-test)
-[![GitHub Actions status](https://github.com/lochbrunner/chop-compiler/workflows/milestones/badge.svg)](https://github.com/lochbrunner/chop-compiler/actions?workflow=milestones)
+[![GitHub Actions status](https://github.com/lochbrunner/chop-compiler/workflows/milestones-ichop/badge.svg)](https://github.com/lochbrunner/chop-compiler/actions?workflow=milestones-ichop)
+[![GitHub Actions status](https://github.com/lochbrunner/chop-compiler/workflows/milestones-cchop/badge.svg)](https://github.com/lochbrunner/chop-compiler/actions?workflow=milestones-cchop)
 
 
 # Reference implementation for chop-lang
@@ -42,7 +43,7 @@ cchop <code filename> -o <output filename>
 
 ## Milestones
 
-### Basics
+### Core
 
 1. [Interpret MVP](./milestones/1) :heavy_check_mark:
 1. [Compile MVP via LLVM](./milestones/2) :heavy_check_mark:
@@ -52,23 +53,22 @@ cchop <code filename> -o <output filename>
 1. [Objects](./milestones/6)
 1. [Functions](./milestones/7)
 1. [Code generation from intermediate steps](./milestones/8)
-1. Enums
 1. Control flow
+1. Enums
 1. Arrays and Strings 
 1. Heap
-1. Caching
-1. Imports and Exports
 1. Meta Programming
 1. Hooks
+1. Imports and Exports
+1. Caching
 1. Borrowing (and checks)
 1. FFI (foreign function interface)
 1. Debugging
 
-### Advanced
+### Standard Library
 
-1. Standard Library
-   * Container
-   * IO
+1. Container
+1. IO
 
 ## Goal - Self hosted language
 
@@ -77,3 +77,18 @@ cchop <code filename> -o <output filename>
 
 ...
 Finally solve some of [Graydon Hoare's problems](https://graydon2.dreamwidth.org/253769.html)
+
+## Architecture
+
+```
+lexer
+  parser
+  generator (deprecated)
+  specializer
+simplifier
+exporter
+  llvm
+  interpreter
+```
+
+The steps `parser`, `generator` and `specializer` are working on single statements.

@@ -1,4 +1,4 @@
-name: milestones
+name: milestones-cchop
 
 on: [push, pull_request]
 
@@ -22,4 +22,4 @@ jobs:
           command: build
           args: --release
       - name: Test
-        run: ./milestones/test.sh
+        run: ./milestones/test.sh --only-cchop

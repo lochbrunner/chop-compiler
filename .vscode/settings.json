@@ -4,6 +4,7 @@
         "astified",
         "astify",
         "buildins",
+        "bytecode",
         "cchop",
         "elim",
         "ichop",

@@ -106,12 +106,12 @@ impl ParseStack {
         let available_symbols = self.symbol.len() + self.infix.len();
         // Find types
         // As each TypeDeclaration eats a type token
-        let number_of_types = self
+        let number_of_type_decls = self
             .symbol
             .iter()
-            .filter(|sym| !sym.1)
+            .filter(|(s, _)| s.is_type_decl())
             .fold(0, |acc, _| acc + 1);
-        available_symbols - left_braces - number_of_types == needed_symbols + 1
+        available_symbols - left_braces - number_of_type_decls * 2 == needed_symbols + 1
     }
 
     pub fn last_symbol_is(&self, payload: &TokenPayload) -> bool {
@@ -189,15 +189,26 @@ fn create_statement<'a>(
         if stack.symbol.len() < op.req_args_count {
             return Err(CompilerError {
                 location: op.token.loc.clone(),
-                msg: format!("Expecting at least {} arguments", op.req_args_count),
+                msg: format!(
+                    "[P1]: Expecting at least {} arguments for token {:?}. Got just {}!",
+                    op.req_args_count,
+                    op.token.token,
+                    stack.symbol.len()
+                ),
             });
         }
+        // Define local can have an optional type argument
+        let ignore_type = match op.token.token {
+            TokenPayload::DefineLocal => true,
+            _ => false,
+        };
+
         let mut args = vec![];
         let mut req_args_count = op.req_args_count;
         while req_args_count > 0 {
             if let Some((symbol, required)) = stack.pop_symbol_as_node() {
                 args.push(symbol);
-                if required {
+                if required || !ignore_type {
                     req_args_count -= 1;
                 }
             }
@@ -343,14 +354,14 @@ pub fn parse(
                                     } else {
                                         return Err(CompilerError::from_token::<Token>(
                                             token,
-                                            format!("[P1] Type {} was not defined.", ident),
+                                            format!("[P2] Type {} was not defined.", ident),
                                         ));
                                     }
                                 } else {
                                     return Err(CompilerError::from_token::<Token>(
                                         token,
                                         format!(
-                                            "[P2] Symbol {} was not defined. Stack.symbol: {:?}",
+                                            "[P3] Symbol {} was not defined. Stack.symbol: {:?}",
                                             ident, stack.symbol
                                         ),
                                     ));
@@ -581,6 +592,57 @@ mod specs {
         assert!(stack.is_completable());
     }
 
+    #[test]
+    fn stack_is_completed_milestone_5_explicit_complete() {
+        use Precedence::*;
+        use Symbol::{Finished, Raw};
+        use TokenPayload::*;
+        let stack = ParseStack {
+            symbol: vec![
+                (Raw(Token::stub(Ident("b".to_owned()))), true),
+                (Raw(Token::stub(TypeDeclaration)), false),
+                (Raw(Token::stub(Ident("i8".to_owned()))), false),
+                (
+                    Finished(Node {
+                        root: LexerTokenPayloadStub::stub(Cast),
+                        args: vec![
+                            Node::leaf(StringStub::stub("a")),
+                            Node::leaf(StringStub::stub("i8")),
+                        ],
+                    }),
+                    true,
+                ),
+                (Raw(Token::stub(Integer(5))), true),
+                (Raw(Token::stub(Ident("i8".to_owned()))), false),
+            ],
+            infix: vec![
+                Infix {
+                    token: Token::stub(DefineLocal),
+                    precedence: PCall,
+                    req_args_count: 2,
+                    optional_type: true,
+                    is_statement: true,
+                },
+                Infix {
+                    token: Token::stub(Add),
+                    precedence: PSum,
+                    req_args_count: 2,
+                    optional_type: false,
+                    is_statement: false,
+                },
+                Infix {
+                    token: Token::stub(Cast),
+                    precedence: PCast,
+                    req_args_count: 2,
+                    optional_type: false,
+                    is_statement: false,
+                },
+            ],
+        };
+
+        assert!(stack.is_completable());
+    }
+
     fn create_stub(tokens: &[TokenPayload]) -> Vec<Token> {
         tokens
             .into_iter()
@@ -603,6 +665,7 @@ mod specs {
             assert!(state.token_start.is_none());
             assert!(state.stack.infix.is_empty());
             assert!(state.stack.symbol.is_empty());
+            assert!(state.stack.is_empty());
         } else {
             assert!(state.token_start.is_some());
         }
@@ -1224,5 +1287,142 @@ mod specs {
         ];
 
         assert_eq!(&actual, &expected);
+    }
+
+    #[test]
+    fn milestone_5_explicit() {
+        let tokens = vec![
+            // b: i8 := 3 as i8 + 5 as i8
+            Ident("b".to_string()),
+            TypeDeclaration,
+            Ident("i8".to_string()),
+            DefineLocal,
+            Integer(3),
+            Cast,
+            Ident("i8".to_string()),
+            Add,
+            Integer(5),
+            Cast,
+            Ident("i8".to_string()),
+        ];
+
+        let mut context = Context {
+            declarations: hashmap! {},
+        };
+
+        let (statement, _) = check_statement(ParserState::new(), &mut context, &tokens, true);
+
+        let expected: Node<SparseToken> = Node {
+            root: LexerTokenPayloadStub::stub(DefineLocal),
+            args: vec![
+                Node::leaf(StringStub::stub("b")),
+                Node::leaf(StringStub::stub("i8")),
+                Node {
+                    root: LexerTokenPayloadStub::stub(Add),
+                    args: vec![
+                        Node {
+                            root: LexerTokenPayloadStub::stub(Cast),
+                            args: vec![
+                                Node::leaf(IntegerStub::stub(3)),
+                                Node::leaf(StringStub::stub("i8")),
+                            ],
+                        },
+                        Node {
+                            root: LexerTokenPayloadStub::stub(Cast),
+                            args: vec![
+                                Node::leaf(IntegerStub::stub(5)),
+                                Node::leaf(StringStub::stub("i8")),
+                            ],
+                        },
+                    ],
+                },
+            ],
+        };
+
+        assert_eq!(statement, expected);
+    }
+
+    #[test]
+    fn create_statement_milestone_5_explicit() {
+        use Precedence::*;
+        use Symbol::{Finished, Raw};
+        use TokenPayload::*;
+        let mut stack = ParseStack {
+            symbol: vec![
+                (Raw(Token::stub(Ident("b".to_owned()))), true),
+                (Raw(Token::stub(TypeDeclaration)), false),
+                (Raw(Token::stub(Ident("i8".to_owned()))), false),
+                (
+                    Finished(Node {
+                        root: LexerTokenPayloadStub::stub(Cast),
+                        args: vec![
+                            Node::leaf(StringStub::stub("a")),
+                            Node::leaf(StringStub::stub("i8")),
+                        ],
+                    }),
+                    true,
+                ),
+                (Raw(Token::stub(Integer(5))), true),
+                (Raw(Token::stub(Ident("i8".to_owned()))), false),
+            ],
+            infix: vec![
+                Infix {
+                    token: Token::stub(DefineLocal),
+                    precedence: PCall,
+                    req_args_count: 2,
+                    optional_type: true,
+                    is_statement: true,
+                },
+                Infix {
+                    token: Token::stub(Add),
+                    precedence: PSum,
+                    req_args_count: 2,
+                    optional_type: false,
+                    is_statement: false,
+                },
+                Infix {
+                    token: Token::stub(Cast),
+                    precedence: PCast,
+                    req_args_count: 2,
+                    optional_type: false,
+                    is_statement: false,
+                },
+            ],
+        };
+
+        let mut context = Context::default();
+
+        let statement = create_statement(&mut context, &mut stack);
+        assert_ok!(statement);
+        let actual = statement.unwrap();
+
+        let expected: Node<SparseToken> = Node {
+            root: LexerTokenPayloadStub::stub(DefineLocal),
+            args: vec![
+                Node::leaf(StringStub::stub("b")),
+                Node::leaf(StringStub::stub("i8")),
+                Node {
+                    root: LexerTokenPayloadStub::stub(Add),
+                    args: vec![
+                        Node {
+                            root: LexerTokenPayloadStub::stub(Cast),
+                            args: vec![
+                                Node::leaf(StringStub::stub("a")),
+                                Node::leaf(StringStub::stub("i8")),
+                            ],
+                        },
+                        Node {
+                            root: LexerTokenPayloadStub::stub(Cast),
+                            args: vec![
+                                Node::leaf(IntegerStub::stub(5)),
+                                Node::leaf(StringStub::stub("i8")),
+                            ],
+                        },
+                    ],
+                },
+            ],
+        };
+
+        assert_eq!(actual, expected);
     }
 }

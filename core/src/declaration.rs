@@ -298,3 +298,20 @@ impl Context {
         }
     }
 }
+
+impl Default for Context {
+    /// Milestone 5 context
+    fn default() -> Self {
+        Self {
+            declarations: hashmap! {
+                "stdout".to_string() => Declaration::full_template_statement(1),
+                "max".to_string() => Declaration::full_template_function(2),
+                "min".to_string() => Declaration::full_template_function(2),
+                "i8".to_string() => Declaration::variable(Type::Type),
+                "i16".to_string() => Declaration::variable(Type::Type),
+                "i32".to_string() => Declaration::variable(Type::Type),
+                "i64".to_string() => Declaration::variable(Type::Type),
+            },
+        }
+    }
+}
