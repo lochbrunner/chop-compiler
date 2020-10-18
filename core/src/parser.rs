@@ -43,8 +43,7 @@ impl Symbol {
 
 #[derive(Debug)]
 struct ParseStack {
-    // (Symbol, is type)
-    pub symbol: Vec<(Symbol, bool)>,
+    pub symbol: Vec<Symbol>,
     pub infix: Vec<Infix>,
 }
 
@@ -61,25 +60,22 @@ impl ParseStack {
     }
 
     /// The lifetime corresponds to the lifetime of the closure given hold by the ParseStack or by this function
-    pub fn pop_symbol_as_node(&mut self) -> Option<(ast::Node<SparseToken>, bool)> {
+    pub fn pop_symbol_as_node(&mut self) -> Option<ast::Node<SparseToken>> {
         match self.symbol.pop() {
             None => None,
-            Some((sym, optional)) => Some(match sym {
+            Some(sym) => Some(match sym {
                 Symbol::Raw(token) => match AstTokenPayload::from(token.token) {
                     Err(_) => return None, // TODO: find better solution
-                    Ok(payload) => (
-                        ast::Node {
-                            root: SparseToken {
-                                payload,
-                                return_type: Rc::new(&|_| None),
-                                loc: token.loc,
-                            },
-                            args: vec![],
+                    Ok(payload) => ast::Node {
+                        root: SparseToken {
+                            payload,
+                            return_type: Rc::new(&|_| None),
+                            loc: token.loc,
                         },
-                        optional,
-                    ),
+                        args: vec![],
+                    },
                 },
-                Symbol::Finished(node) => (node, optional),
+                Symbol::Finished(node) => node,
             }),
         }
     }
@@ -109,7 +105,7 @@ impl ParseStack {
         let number_of_type_decls = self
             .symbol
             .iter()
-            .filter(|(s, _)| s.is_type_decl())
+            .filter(|s| s.is_type_decl())
             .fold(0, |acc, _| acc + 1);
         available_symbols - left_braces - number_of_type_decls * 2 == needed_symbols + 1
     }
@@ -117,7 +113,7 @@ impl ParseStack {
     pub fn last_symbol_is(&self, payload: &TokenPayload) -> bool {
         if let Some(symbol) = self.symbol.last() {
             match symbol {
-                (Symbol::Raw(symbol), _) => &symbol.token == payload,
+                Symbol::Raw(symbol) => &symbol.token == payload,
                 _ => false,
             }
         } else {
@@ -157,24 +153,18 @@ where
         }
         let mut args: Vec<ast::Node<ast::SparseToken>> = Vec::with_capacity(op.req_args_count);
         for _ in 0..op.req_args_count {
-            let (node, _): (ast::Node<ast::SparseToken>, _) = stack.pop_symbol_as_node().unwrap();
+            let node: ast::Node<ast::SparseToken> = stack.pop_symbol_as_node().unwrap();
             args.push(node)
         }
-        // let mut args: Vec<ast::Node<ast::SparseToken<'a>>> = (0..op.req_args_count)
-        //     .map(|_| stack.pop_symbol_as_node().unwrap().0)
-        //     .collect::<Vec<_>>();
         args.reverse();
-        stack.symbol.push((
-            Symbol::Finished(ast::Node {
-                root: SparseToken {
-                    payload: AstTokenPayload::from(op.token.token)?,
-                    loc: op.token.loc,
-                    return_type: Rc::new(|_| None),
-                },
-                args,
-            }),
-            true,
-        ));
+        stack.symbol.push(Symbol::Finished(ast::Node {
+            root: SparseToken {
+                payload: AstTokenPayload::from(op.token.token)?,
+                loc: op.token.loc,
+                return_type: Rc::new(|_| None),
+            },
+            args,
+        }));
     }
 
     Ok(())
@@ -212,9 +202,28 @@ fn create_statement<'a>(
                     op.token
                 )));
             }
-            if let Some((symbol, required)) = stack.pop_symbol_as_node() {
+            let is_decl_or_type = if let Some(e) = stack.symbol.last() {
+                if let Symbol::Raw(s) = e {
+                    match s.token {
+                        TokenPayload::Ident(ref arg_ident) => {
+                            if let Some(arg_decl) = context.declarations.get(arg_ident) {
+                                arg_decl.is_type()
+                            } else {
+                                false
+                            }
+                        }
+                        TokenPayload::TypeDeclaration => true,
+                        _ => false,
+                    }
+                } else {
+                    false
+                }
+            } else {
+                false
+            };
+            if let Some(symbol) = stack.pop_symbol_as_node() {
                 args.push(symbol);
-                if required || !ignore_type {
+                if !is_decl_or_type || !ignore_type {
                     req_args_count -= 1;
                 }
             }
@@ -253,22 +262,13 @@ fn create_statement<'a>(
             }
             return Ok(node);
         } else {
-            stack.symbol.push((Symbol::Finished(node), true));
+            stack.symbol.push(Symbol::Finished(node));
         }
     }
     Err(CompilerError::global(&format!(
         "Parser could not process all tokens. Remaining are {:?}",
-        stack.symbol.iter().map(|i| &i.0).collect::<Vec<_>>()
+        stack.symbol
     )))
-}
-
-pub fn is_known_type(_context: &Context, ident: &str) -> bool {
-    match ident {
-        "i8" | "i16" | "i32" | "i64" => true,
-        "u8" | "u16" | "u32" | "u64" => true,
-        "f8" | "f16" | "f32" | "f64" => true,
-        _ => false,
-    }
 }
 
 #[derive(Debug)]
@@ -334,7 +334,7 @@ pub fn parse(
             }
             TokenPayload::Ident(ident) => {
                 if expect_function_as_variable {
-                    stack.symbol.push((Symbol::Raw(token.clone()), true));
+                    stack.symbol.push(Symbol::Raw(token.clone()));
                 } else {
                     if stack.is_completable() {
                         let statement = create_statement(context, &mut stack)?;
@@ -349,39 +349,27 @@ pub fn parse(
                     match context.declarations.get(ident) {
                         None => {
                             if !stack.is_empty() {
-                                if stack.last_symbol_is(&TokenPayload::TypeDeclaration)
-                                    || stack.last_operator_is(&TokenPayload::Cast)
-                                {
-                                    if is_known_type(&context, ident) {
-                                        stack.symbol.push((
-                                            Symbol::Raw(token.clone()),
-                                            stack.last_operator_is(&TokenPayload::Cast),
-                                        ));
-                                    } else {
-                                        return Err(CompilerError::from_token::<Token>(
-                                            token,
-                                            format!("[P2] Type {} was not defined.", ident),
-                                        ));
-                                    }
-                                } else {
-                                    return Err(CompilerError::from_token::<Token>(
-                                        token,
-                                        format!(
-                                            "[P3] Symbol {} was not defined. Stack.symbol: {:?}",
-                                            ident, stack.symbol
-                                        ),
-                                    ));
-                                }
+                                // Expecting a type?
+                                let expect_type = stack
+                                    .last_symbol_is(&TokenPayload::TypeDeclaration)
+                                    || stack.last_operator_is(&TokenPayload::Cast);
+                                let msg = if expect_type { "Type" } else { "Symbol" };
+
+                                return Err(CompilerError::from_token::<Token>(
+                                    token,
+                                    format!(
+                                        "[P2] {} {} was not defined. Stack.symbol: {:?}",
+                                        msg, ident, stack.symbol
+                                    ),
+                                ));
                             } else {
                                 // New declaration?
-                                stack.symbol.push((Symbol::Raw(token.clone()), true));
+                                stack.symbol.push(Symbol::Raw(token.clone()));
                             }
                         }
                         Some(declaration) => {
                             if declaration.req_args_count() == 0 {
-                                stack
-                                    .symbol
-                                    .push((Symbol::Raw(token.clone()), !declaration.is_type()));
+                                stack.symbol.push(Symbol::Raw(token.clone()));
                             } else {
                                 stack.infix.push(Infix {
                                     token: token.clone(),
@@ -399,7 +387,7 @@ pub fn parse(
             TokenPayload::Integer(_) | TokenPayload::Float(_) => {
                 if stack.is_completable() {
                     let statement = create_statement(context, &mut stack)?;
-                    stack.symbol.push((Symbol::Raw(token.clone()), true));
+                    stack.symbol.push(Symbol::Raw(token.clone()));
 
                     return Ok(Some((
                         statement,
@@ -409,7 +397,7 @@ pub fn parse(
                         },
                     )));
                 } else {
-                    stack.symbol.push((Symbol::Raw(token.clone()), true));
+                    stack.symbol.push(Symbol::Raw(token.clone()));
                 }
             }
             TokenPayload::DefineLocal => {
@@ -429,7 +417,7 @@ pub fn parse(
                 }
             }
             TokenPayload::TypeDeclaration => {
-                stack.symbol.push((Symbol::Raw(token.clone()), false));
+                stack.symbol.push(Symbol::Raw(token.clone()));
             }
             TokenPayload::Pipe => {
                 if stack.check_precedence(&Precedence::Pipe) {
@@ -493,12 +481,7 @@ pub fn parse(
                     is_statement: false,
                     optional_type: false,
                 });
-            } // _ => {
-              //     return Err(CompilerError {
-              //         location: token.begin.clone(),
-              //         msg: format!("Unknown token: {:?}", token.token),
-              //     })
-              // }
+            }
         }
     }
 
@@ -513,7 +496,6 @@ pub fn parse(
         )));
     }
 
-    let tokens = stack.symbol.iter().map(|(s, _)| s).collect::<Vec<_>>();
     Err(CompilerError::global(&format!(
         "Parser could not process all tokens. Remaining are {:?}",
         tokens
@@ -534,10 +516,10 @@ mod specs {
         use TokenPayload::*;
         let stack = ParseStack {
             symbol: vec![
-                (Raw(Token::stub(Ident("a".to_owned()))), true),
-                (Raw(Token::stub(TypeDeclaration)), false),
-                (Raw(Token::stub(Ident("i16".to_owned()))), false),
-                (Raw(Token::stub(Integer(3))), true),
+                Raw(Token::stub(Ident("a".to_owned()))),
+                Raw(Token::stub(TypeDeclaration)),
+                Raw(Token::stub(Ident("i16".to_owned()))),
+                Raw(Token::stub(Integer(3))),
             ],
             infix: vec![Infix {
                 token: Token::stub(DefineLocal),
@@ -558,9 +540,9 @@ mod specs {
         use TokenPayload::*;
         let stack = ParseStack {
             symbol: vec![
-                (Raw(Token::stub(Ident("a".to_owned()))), true),
-                (Raw(Token::stub(TypeDeclaration)), false),
-                (Raw(Token::stub(Ident("i32".to_owned()))), false),
+                Raw(Token::stub(Ident("a".to_owned()))),
+                Raw(Token::stub(TypeDeclaration)),
+                Raw(Token::stub(Ident("i32".to_owned()))),
             ],
             infix: vec![Infix {
                 token: Token::stub(DefineLocal),
@@ -581,10 +563,10 @@ mod specs {
         use TokenPayload::*;
         let stack = ParseStack {
             symbol: vec![
-                (Raw(Token::stub(Ident("a".to_owned()))), true),
-                (Raw(Token::stub(TypeDeclaration)), false),
-                (Raw(Token::stub(Ident("i32".to_owned()))), false),
-                (Raw(Token::stub(Integer(3))), true),
+                Raw(Token::stub(Ident("a".to_owned()))),
+                Raw(Token::stub(TypeDeclaration)),
+                Raw(Token::stub(Ident("i32".to_owned()))),
+                Raw(Token::stub(Integer(3))),
             ],
             infix: vec![Infix {
                 token: Token::stub(DefineLocal),
@@ -605,21 +587,18 @@ mod specs {
         use TokenPayload::*;
         let stack = ParseStack {
             symbol: vec![
-                (Raw(Token::stub(Ident("b".to_owned()))), true),
-                (Raw(Token::stub(TypeDeclaration)), false),
-                (Raw(Token::stub(Ident("i8".to_owned()))), false),
-                (
-                    Finished(Node {
-                        root: LexerTokenPayloadStub::stub(Cast),
-                        args: vec![
-                            Node::leaf(StringStub::stub("a")),
-                            Node::leaf(StringStub::stub("i8")),
-                        ],
-                    }),
-                    true,
-                ),
-                (Raw(Token::stub(Integer(5))), true),
-                (Raw(Token::stub(Ident("i8".to_owned()))), false),
+                Raw(Token::stub(Ident("b".to_owned()))),
+                Raw(Token::stub(TypeDeclaration)),
+                Raw(Token::stub(Ident("i8".to_owned()))),
+                Finished(Node {
+                    root: LexerTokenPayloadStub::stub(Cast),
+                    args: vec![
+                        Node::leaf(StringStub::stub("a")),
+                        Node::leaf(StringStub::stub("i8")),
+                    ],
+                }),
+                Raw(Token::stub(Integer(5))),
+                Raw(Token::stub(Ident("i8".to_owned()))),
             ],
             infix: vec![
                 Infix {
@@ -1153,6 +1132,7 @@ mod specs {
         let mut context = Context {
             declarations: hashmap! {
                 "stdout".to_string() => Declaration::full_template_statement(1),
+                "i16".to_string() => Declaration::variable(Type::Type),
             },
         };
 
@@ -1226,6 +1206,8 @@ mod specs {
             declarations: hashmap! {
                 "stdout".to_string() => Declaration::full_template_statement(1),
                 "max".to_string() => Declaration::full_template_function(2),
+                "i8".to_string() => Declaration::variable(Type::Type),
+                "i32".to_string() => Declaration::variable(Type::Type),
             },
         };
 
@@ -1313,7 +1295,9 @@ mod specs {
         ];
 
         let mut context = Context {
-            declarations: hashmap! {},
+            declarations: hashmap! {
+                "i8".to_string() => Declaration::variable(Type::Type),
+            },
         };
 
         let (statement, _) = check_statement(ParserState::new(), &mut context, &tokens, true);
@@ -1355,21 +1339,18 @@ mod specs {
         use TokenPayload::*;
         let mut stack = ParseStack {
             symbol: vec![
-                (Raw(Token::stub(Ident("b".to_owned()))), true),
-                (Raw(Token::stub(TypeDeclaration)), false),
-                (Raw(Token::stub(Ident("i8".to_owned()))), false),
-                (
-                    Finished(Node {
-                        root: LexerTokenPayloadStub::stub(Cast),
-                        args: vec![
-                            Node::leaf(StringStub::stub("a")),
-                            Node::leaf(StringStub::stub("i8")),
-                        ],
-                    }),
-                    true,
-                ),
-                (Raw(Token::stub(Integer(5))), true),
-                (Raw(Token::stub(Ident("i8".to_owned()))), false),
+                Raw(Token::stub(Ident("b".to_owned()))),
+                Raw(Token::stub(TypeDeclaration)),
+                Raw(Token::stub(Ident("i8".to_owned()))),
+                Finished(Node {
+                    root: LexerTokenPayloadStub::stub(Cast),
+                    args: vec![
+                        Node::leaf(StringStub::stub("a")),
+                        Node::leaf(StringStub::stub("i8")),
+                    ],
+                }),
+                Raw(Token::stub(Integer(5))),
+                Raw(Token::stub(Ident("i8".to_owned()))),
             ],
             infix: vec![
                 Infix {
