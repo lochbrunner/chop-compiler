@@ -246,8 +246,7 @@ fn specialize_node<'a>(
                 specialize_symbol(ident, args, loc, expected, context)
             }
             // What are the expected types
-            // For now assume each is a Int32
-            _ => {
+            AstTokenPayload::Integer(_) => {
                 let expected = expected.unwrap_or(Type::Int32);
                 let args = args
                     .into_iter()
@@ -265,6 +264,25 @@ fn specialize_node<'a>(
                     args,
                 })
             }
+            AstTokenPayload::Float(_) => {
+                let expected = expected.unwrap_or(Type::Float32);
+                let args = args
+                    .into_iter()
+                    .map(|s| (s, None))
+                    .map(specialize_node(context))
+                    .collect::<Result<Vec<_>, CompilerError>>()?;
+                // Find type child from parent
+                let r_type = return_type(None).unwrap_or(expected);
+                Ok(DenseNode {
+                    root: DenseToken {
+                        payload,
+                        loc,
+                        return_type: r_type,
+                    },
+                    args,
+                })
+            }
+            _ => Err(loc.to_error(format!("[S2] Unexpected token {:?}", payload))),
         }
     }
 }

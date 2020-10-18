@@ -38,6 +38,11 @@ pub struct IntegerProvider {
     pub content: i64,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct FloatProvider {
+    pub content: f64,
+}
+
 // pub trait Convert {
 //     type Underlying;
 //     fn convert(self) -> Result<Self::Underlying, String>;
@@ -54,20 +59,20 @@ pub struct IntegerProvider {
 //     }
 // }
 
-impl IntegerProvider {
-    // pub fn get_i8(&self) -> Result<i8, String> {
-    //     self.content.parse().map_err(|e| format!("{:?}", e))
-    // }
-    // pub fn get_i16(&self) -> Result<i16, String> {
-    //     self.content.parse().map_err(|e| format!("{:?}", e))
-    // }
-    // pub fn get_i32(&self) -> Result<i32, String> {
-    //     self.content.parse().map_err(|e| format!("{:?}", e))
-    // }
-    // pub fn get_i64(&self) -> Result<i64, String> {
-    //     self.content.parse().map_err(|e| format!("{:?}", e))
-    // }
-}
+// impl IntegerProvider {
+//     // pub fn get_i8(&self) -> Result<i8, String> {
+//     //     self.content.parse().map_err(|e| format!("{:?}", e))
+//     // }
+//     // pub fn get_i16(&self) -> Result<i16, String> {
+//     //     self.content.parse().map_err(|e| format!("{:?}", e))
+//     // }
+//     // pub fn get_i32(&self) -> Result<i32, String> {
+//     //     self.content.parse().map_err(|e| format!("{:?}", e))
+//     // }
+//     // pub fn get_i64(&self) -> Result<i64, String> {
+//     //     self.content.parse().map_err(|e| format!("{:?}", e))
+//     // }
+// }
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum AstTokenPayload {
@@ -75,6 +80,7 @@ pub enum AstTokenPayload {
     Symbol(String),
     // Literals
     Integer(IntegerProvider),
+    Float(FloatProvider),
     // Statements
     DefineLocal(Option<Type>), // :=
     // DefinePublic, // :+
@@ -99,6 +105,7 @@ impl AstTokenPayload {
             TokenPayload::Integer(content) => {
                 Ok(AstTokenPayload::Integer(IntegerProvider { content }))
             }
+            TokenPayload::Float(content) => Ok(AstTokenPayload::Float(FloatProvider { content })),
             TokenPayload::DefineLocal => Ok(AstTokenPayload::DefineLocal(None)),
             TokenPayload::Cast => Ok(AstTokenPayload::Cast),
             TokenPayload::Pipe => Ok(AstTokenPayload::Pipe),

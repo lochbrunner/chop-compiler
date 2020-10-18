@@ -112,6 +112,28 @@ fn parse_integer(code: Span) -> IResult<Span, TokenPayload> {
   }
 }
 
+fn parse_float(code: Span) -> IResult<Span, TokenPayload> {
+  let (code, sign) = opt(tag("-"))(code)?;
+  let sign = sign.is_some();
+  let chars = "1234567890.";
+  // Sign ?
+  if sign && !code.extra.accept_literal {
+    return Err(nom::Err::Error((code, ErrorKind::IsNot)));
+  }
+  let (code, slice) = take_while(move |c| chars.contains(c))(code)?;
+  if slice.fragment.contains(".") {
+    match slice.fragment.parse::<f64>() {
+      Ok(value) => set_accept_literal(
+        false,
+        Ok((code, TokenPayload::Float(if sign { -value } else { value }))),
+      ),
+      Err(_) => Err(nom::Err::Error((code, ErrorKind::Tag))),
+    }
+  } else {
+    Err(nom::Err::Error((code, ErrorKind::Tag)))
+  }
+}
+
 fn parse_ident(code: Span) -> IResult<Span, TokenPayload> {
   let (code, (first, second)) = pair(alpha0, alphanumeric0)(code)?;
   let ident = format!("{}{}", first.fragment, second.fragment);
@@ -137,6 +159,7 @@ fn lex_token(code: Span) -> IResult<Span, Token> {
   let (code, begin) = position(code)?;
   let (code, payload) = alt((
     operators,
+    parse_float,
     parse_integer,
     parse_ident,
     mathematical_operators,
@@ -202,6 +225,28 @@ mod specs {
 
   use TokenPayload::*;
 
+  fn assert(code: &str, expected: TokenPayload) {
+    let actual = lex(&code);
+
+    assert_ok!(actual);
+    let actual = actual.unwrap();
+    assert_eq!(actual.len(), 1);
+    let actual = &actual[0].token;
+    assert_eq!(actual, &expected);
+  }
+
+  #[test]
+  fn parse_float() {
+    assert("3.0 ", TokenPayload::Float(3.0));
+    assert("3. ", TokenPayload::Float(3.0));
+    assert(".5 ", TokenPayload::Float(0.5));
+  }
+
+  #[test]
+  fn parse_int() {
+    assert("3 ", TokenPayload::Integer(3));
+  }
+
   #[test]
   fn single_op() {
     let actual = lex(&":= ").unwrap();
@@ -248,6 +293,24 @@ mod specs {
     ];
 
     assert_eq!(actual, expected);
+  }
+
+  #[test]
+  fn floating_points() {
+    let actual = lex(&"a: f32 := 3.0");
+    assert_ok!(actual);
+    let actual = actual.unwrap();
+
+    let actual = actual.into_iter().map(|n| n.token).collect::<Vec<_>>();
+    let expected = [
+      Ident("a".to_owned()),
+      TypeDeclaration,
+      Ident("f32".to_owned()),
+      DefineLocal,
+      Float(3.0),
+    ];
+
+    assert_eq!(&actual, &expected);
   }
 
   #[test]

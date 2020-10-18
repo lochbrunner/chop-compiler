@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::fmt;
+use std::str::FromStr;
 
 use crate::ast;
 use crate::error::{CompilerError, Location};
@@ -11,46 +12,46 @@ pub enum Type {
     Int16,
     Int32,
     Int64,
+    Float32,
+    Float64,
     Void,
     Type,
+}
+
+impl FromStr for Type {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "i8" => Ok(Type::Int8),
+            "i16" => Ok(Type::Int16),
+            "i32" => Ok(Type::Int32),
+            "i64" => Ok(Type::Int64),
+            "f32" => Ok(Type::Float32),
+            "f64" => Ok(Type::Float64),
+            _ => Err(()),
+        }
+    }
 }
 
 impl Type {
     pub fn from_token(token: &token::Token) -> Type {
         match token.token {
-            token::TokenPayload::Ident(ref ident) => match ident as &str {
-                "i8" => Type::Int8,
-                "i16" => Type::Int16,
-                "i32" => Type::Int32,
-                "i64" => Type::Int64,
-                _ => Type::Int32,
-            },
+            token::TokenPayload::Ident(ref ident) => Type::from_str(ident).unwrap_or(Type::Int32),
             _ => Type::Int32,
         }
     }
 
     pub fn from_sparse_token(token: &ast::SparseToken) -> Type {
         match token.payload {
-            ast::AstTokenPayload::Symbol(ref ident) => match ident as &str {
-                "i8" => Type::Int8,
-                "i16" => Type::Int16,
-                "i32" => Type::Int32,
-                "i64" => Type::Int64,
-                _ => Type::Int32,
-            },
+            ast::AstTokenPayload::Symbol(ref ident) => Type::from_str(ident).unwrap_or(Type::Int32),
             _ => Type::Int32,
         }
     }
 
     pub fn from_dense_token(token: &ast::DenseToken) -> Type {
         match token.payload {
-            ast::AstTokenPayload::Symbol(ref ident) => match ident as &str {
-                "i8" => Type::Int8,
-                "i16" => Type::Int16,
-                "i32" => Type::Int32,
-                "i64" => Type::Int64,
-                _ => Type::Int32,
-            },
+            ast::AstTokenPayload::Symbol(ref ident) => Type::from_str(ident).unwrap_or(Type::Int32),
             _ => Type::Int32,
         }
     }
@@ -79,6 +80,8 @@ impl fmt::Display for Type {
             Type::Int16 => "int16",
             Type::Int32 => "int32",
             Type::Int64 => "int64",
+            Type::Float32 => "float32",
+            Type::Float64 => "float64",
             Type::Void => "void",
             Type::Type => "type",
         };
@@ -311,6 +314,8 @@ impl Default for Context {
                 "i16".to_string() => Declaration::variable(Type::Type),
                 "i32".to_string() => Declaration::variable(Type::Type),
                 "i64".to_string() => Declaration::variable(Type::Type),
+                "f32".to_string() => Declaration::variable(Type::Type),
+                "f64".to_string() => Declaration::variable(Type::Type),
             },
         }
     }

@@ -15,6 +15,8 @@ CASES=($(ls ./milestones/*/*.ch))
 RUN_ICHOP=1
 RUN_CCHOP=1
 
+TIMEOUT=1
+
 while [[ $# -gt 0 ]]; do
     key="$1"
     case $key in
@@ -34,7 +36,7 @@ if [ -n "$RUN_ICHOP" ]; then
     for CASE in "${CASES[@]}"; do
         printf "test $CASE ... "
         expected=$(cat "${CASE%.*}".out)
-        actual=$($CASE)
+        actual=$(timeout $TIMEOUT $CASE)
 
         if test "$?" -ne "0"; then
             let "FAILED++"
@@ -54,7 +56,7 @@ if [ -n "$RUN_CCHOP" ]; then
     for CASE in "${CASES[@]}"; do
         printf "test $CASE ... "
         expected=$(cat "${CASE%.*}".out)
-        cchop $CASE -o build/main
+        timeout $TIMEOUT cchop $CASE -o build/main
         if test "$?" -ne "0"; then
             let "FAILED++"
             echo -e "${RED}cchop crashed!$NC"

@@ -7,7 +7,7 @@ pub enum TokenPayload {
     Ident(String),
     // Literals
     Integer(i64),
-    // Float32(f32),
+    Float(f64),
     // TODO: more literals
 
     // Statements
@@ -41,6 +41,7 @@ impl fmt::Display for TokenPayload {
         let string = match self {
             Ident(ident) => ident.to_owned(),
             Integer(value) => format!("{}", value),
+            Float(value) => format!("{}", value),
             DefineLocal => ":=".to_owned(),
             Cast => "as".to_owned(),
             Pipe => "|".to_owned(),
@@ -68,17 +69,11 @@ impl TokenPayload {
     }
 }
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Token {
     pub token: TokenPayload,
     pub loc: Location,
     // pub filename: &str,
-}
-
-impl fmt::Debug for Token {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.token)
-    }
 }
 
 #[cfg(test)]

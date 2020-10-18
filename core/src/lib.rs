@@ -263,4 +263,31 @@ mod e2e {
 
         assert_ok!(actual);
     }
+
+    #[test]
+    fn milestone_5_float() {
+        let code = "#!/usr/bin/env ichop
+
+        a: f32 := 3.
+        b: f64 := a as f64 + 5.
+        c := 7.
+
+        stdout max(b,c)";
+
+        let mut context = Context::default();
+        let tokens = lexer::lex(code).unwrap();
+        let mut state = parser::ParserState::new();
+        let mut ast = DenseAst::new();
+        while let Some((statement, new_state)) =
+            parser::parse(state, &mut context, &tokens).unwrap()
+        {
+            state = new_state;
+            let statement = generator::generate_sparse(statement).unwrap();
+            let statement = specializer::specialize(statement, &mut context).unwrap();
+            ast.statements.push(statement);
+        }
+        let ast = simplifier::simplify(ast).unwrap();
+        let actual = bytecode::compile(&context, ast);
+        assert_ok!(actual);
+    }
 }

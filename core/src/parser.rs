@@ -66,7 +66,7 @@ impl ParseStack {
             None => None,
             Some((sym, optional)) => Some(match sym {
                 Symbol::Raw(token) => match AstTokenPayload::from(token.token) {
-                    Err(_) => return None,
+                    Err(_) => return None, // TODO: find better solution
                     Ok(payload) => (
                         ast::Node {
                             root: SparseToken {
@@ -206,6 +206,12 @@ fn create_statement<'a>(
         let mut args = vec![];
         let mut req_args_count = op.req_args_count;
         while req_args_count > 0 {
+            if stack.symbol.is_empty() {
+                return Err(op.token.loc.to_error(format!(
+                    "Internal Error [P1]: Wrong parsing of arguments for function: {:?}",
+                    op.token
+                )));
+            }
             if let Some((symbol, required)) = stack.pop_symbol_as_node() {
                 args.push(symbol);
                 if required || !ignore_type {
@@ -390,7 +396,7 @@ pub fn parse(
                 }
                 expect_function_as_variable = false;
             }
-            TokenPayload::Integer(_) => {
+            TokenPayload::Integer(_) | TokenPayload::Float(_) => {
                 if stack.is_completable() {
                     let statement = create_statement(context, &mut stack)?;
                     stack.symbol.push((Symbol::Raw(token.clone()), true));

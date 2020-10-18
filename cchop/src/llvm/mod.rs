@@ -56,6 +56,8 @@ fn write_attribute(index: u32, attr: HashMap<&str, &str>, code: &mut String) {
 #[derive(Debug)]
 /// Same as in evaluation
 enum StackItem {
+    Float64(f64),
+    Float32(f32),
     Int64(i64),
     Int32(i32),
     Int16(i16),
@@ -85,6 +87,8 @@ fn get_last_item_rep_gen(stack: &mut Vec<StackItem>) -> Result<String, CompilerE
             StackItem::Int16(v) => Ok(v.to_string()),
             StackItem::Int32(v) => Ok(v.to_string()),
             StackItem::Int64(v) => Ok(v.to_string()),
+            StackItem::Float32(v) => Ok(v.to_string()),
+            StackItem::Float64(v) => Ok(v.to_string()),
         },
     }
 }
@@ -168,6 +172,8 @@ impl ToLLVM for Type {
             Type::Int16 => "i16",
             Type::Int32 => "i32",
             Type::Int64 => "i64",
+            Type::Float32 => "f32",
+            Type::Float64 => "f64",
             Type::Void => "void",
             Type::Type => panic!("Type can not be used as an variable"),
         }
@@ -276,6 +282,8 @@ pub fn export(instructions: &[ByteCode], source_filename: &str) -> Result<String
             ByteCode::PushInt16(v) => stack.push(StackItem::Int16(*v)),
             ByteCode::PushInt32(v) => stack.push(StackItem::Int32(*v)),
             ByteCode::PushInt64(v) => stack.push(StackItem::Int64(*v)),
+            ByteCode::PushFloat32(v) => stack.push(StackItem::Float32(*v)),
+            ByteCode::PushFloat64(v) => stack.push(StackItem::Float64(*v)),
             ByteCode::Call2(ident, return_type, arg_type_0, arg_type_1) => {
                 call_function_2_gen(
                     ident,

@@ -12,6 +12,8 @@ pub enum ByteCode {
     PushInt16(i16),
     PushInt32(i32),
     PushInt64(i64),
+    PushFloat32(f32),
+    PushFloat64(f64),
     Add(Type),
     Sub(Type),
     Mul(Type),
@@ -119,6 +121,25 @@ fn unroll_node<'a>(
             }
             Ok(node.root.return_type.clone())
         }
+        AstTokenPayload::Float(ref provider) => {
+            // TODO: get value of correct type
+            let v = provider.content;
+            match node.root.return_type {
+                Type::Float32 => {
+                    bytecode.push(ByteCode::PushFloat32(v as f32));
+                }
+                Type::Float64 => {
+                    bytecode.push(ByteCode::PushFloat64(v as f64));
+                }
+                _ => {
+                    return Err(node.root.loc.to_error(format!(
+                        "[E4]: A Float can not be of type {:?}",
+                        node.root.return_type
+                    )))
+                }
+            }
+            Ok(node.root.return_type.clone())
+        }
         AstTokenPayload::Symbol(ref ident) => {
             let declaration = context.get_declaration(ident, &node.root.loc)?;
             let arg_types = node
@@ -213,7 +234,7 @@ fn unroll_node<'a>(
 
             Ok(target_type)
         }
-        _ => Err(CompilerError {
+        AstTokenPayload::Pipe => Err(CompilerError {
             location: node.root.loc.clone(),
             msg: format!(
                 "[E8]: Exporter Error: Unknown token {:?}",
