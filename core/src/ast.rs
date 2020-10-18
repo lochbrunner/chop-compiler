@@ -114,7 +114,7 @@ impl AstTokenPayload {
             TokenPayload::Add => Ok(AstTokenPayload::Add),
             TokenPayload::Subtract => Ok(AstTokenPayload::Subtract),
             TokenPayload::Remainder => Ok(AstTokenPayload::Remainder),
-            _ => Err(format!("{:?} is not a valid type for Ast.", prev)),
+            _ => Err(format!("[A1] {:?} is not a valid type for Ast.", prev)),
         }
     }
 

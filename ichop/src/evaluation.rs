@@ -33,6 +33,11 @@ enum StackItem {
     Int32(i32),
     Int16(i16),
     Int8(i8),
+    UInt64(u64),
+    UInt32(u32),
+    UInt16(u16),
+    UInt8(u8),
+    USize(usize),
     Float32(f32),
     Float64(f64),
 }
@@ -66,6 +71,11 @@ pop_typed!(Int8, i8);
 pop_typed!(Int16, i16);
 pop_typed!(Int32, i32);
 pop_typed!(Int64, i64);
+pop_typed!(UInt8, u8);
+pop_typed!(UInt16, u16);
+pop_typed!(UInt32, u32);
+pop_typed!(UInt64, u64);
+pop_typed!(USize, usize);
 pop_typed!(Float32, f32);
 pop_typed!(Float64, f64);
 
@@ -197,15 +207,15 @@ macro_rules! load_t {
 //     };
 // }
 
-operator_t!(add,+, {Int8 => i8, Int16 => i16, Int32 => i32, Int64 => i64, Float32 => f32, Float64 => f64});
-operator_t!(sub,-, {Int8 => i8, Int16 => i16, Int32 => i32, Int64 => i64, Float32 => f32, Float64 => f64});
-operator_t!(mul,*, {Int8 => i8, Int16 => i16, Int32 => i32, Int64 => i64, Float32 => f32, Float64 => f64});
-operator_t!(div,/, {Int8 => i8, Int16 => i16, Int32 => i32, Int64 => i64, Float32 => f32, Float64 => f64});
-operator_t!(rem,%, {Int8 => i8, Int16 => i16, Int32 => i32, Int64 => i64});
-builtin_2_t!(max_builtin, max, {Int8 => i8, Int16 => i16, Int32 => i32, Int64 => i64, Float32 => f32, Float64 => f64});
-builtin_2_t!(min_builtin, min, {Int8 => i8, Int16 => i16, Int32 => i32, Int64 => i64, Float32 => f32, Float64 => f64});
-store_t! {Int8 => i8, Int16 => i16, Int32 => i32, Int64 => i64, Float32 => f32, Float64 => f64}
-load_t![Int8, Int16, Int32, Int64, Float32, Float64];
+operator_t!(add,+, {Int8 => i8, Int16 => i16, Int32 => i32, Int64 => i64, UInt8 => u8, UInt16 => u16, UInt32 => u32, UInt64 => u64, USize => usize, Float32 => f32, Float64 => f64});
+operator_t!(sub,-, {Int8 => i8, Int16 => i16, Int32 => i32, Int64 => i64, UInt8 => u8, UInt16 => u16, UInt32 => u32, UInt64 => u64, USize => usize, Float32 => f32, Float64 => f64});
+operator_t!(mul,*, {Int8 => i8, Int16 => i16, Int32 => i32, Int64 => i64, UInt8 => u8, UInt16 => u16, UInt32 => u32, UInt64 => u64, USize => usize, Float32 => f32, Float64 => f64});
+operator_t!(div,/, {Int8 => i8, Int16 => i16, Int32 => i32, Int64 => i64, UInt8 => u8, UInt16 => u16, UInt32 => u32, UInt64 => u64, USize => usize, Float32 => f32, Float64 => f64});
+operator_t!(rem,%, {Int8 => i8, Int16 => i16, Int32 => i32, Int64 => i64, UInt8 => u8, UInt16 => u16, UInt32 => u32, UInt64 => u64, USize => usize});
+builtin_2_t!(max_builtin, max, {Int8 => i8, Int16 => i16, Int32 => i32, Int64 => i64, UInt8 => u8, UInt16 => u16, UInt32 => u32, UInt64 => u64, USize => usize, Float32 => f32, Float64 => f64});
+builtin_2_t!(min_builtin, min, {Int8 => i8, Int16 => i16, Int32 => i32, Int64 => i64, UInt8 => u8, UInt16 => u16, UInt32 => u32, UInt64 => u64, USize => usize, Float32 => f32, Float64 => f64});
+store_t! {Int8 => i8, Int16 => i16, Int32 => i32, Int64 => i64, UInt8 => u8, UInt16 => u16, UInt32 => u32, UInt64 => u64, USize => usize, Float32 => f32, Float64 => f64}
+load_t![Int8, Int16, Int32, Int64, UInt8, UInt16, UInt32, UInt64, USize, Float32, Float64];
 
 fn cast(from: &Type, to: &Type, stack: &mut Vec<StackItem>) -> Result<(), String> {
     match from {
@@ -216,6 +226,11 @@ fn cast(from: &Type, to: &Type, stack: &mut Vec<StackItem>) -> Result<(), String
                 Type::Int16 => stack.push(StackItem::Int16(i16::from(v))),
                 Type::Int32 => stack.push(StackItem::Int32(i32::from(v))),
                 Type::Int64 => stack.push(StackItem::Int64(i64::from(v))),
+                Type::UInt8 => stack.push(StackItem::UInt8(v as u8)),
+                Type::UInt16 => stack.push(StackItem::UInt16(v as u16)),
+                Type::UInt32 => stack.push(StackItem::UInt32(v as u32)),
+                Type::UInt64 => stack.push(StackItem::UInt64(v as u64)),
+                Type::USize => stack.push(StackItem::USize(v as usize)),
                 _ => {
                     return Err(format!(
                         "Casting from {:?} to {:?} is not implemented yet!",
@@ -231,6 +246,11 @@ fn cast(from: &Type, to: &Type, stack: &mut Vec<StackItem>) -> Result<(), String
                 Type::Int16 => stack.push(StackItem::Int16(v)),
                 Type::Int32 => stack.push(StackItem::Int32(i32::from(v))),
                 Type::Int64 => stack.push(StackItem::Int64(i64::from(v))),
+                Type::UInt8 => stack.push(StackItem::UInt8(v as u8)),
+                Type::UInt16 => stack.push(StackItem::UInt16(v as u16)),
+                Type::UInt32 => stack.push(StackItem::UInt32(v as u32)),
+                Type::UInt64 => stack.push(StackItem::UInt64(v as u64)),
+                Type::USize => stack.push(StackItem::USize(v as usize)),
                 _ => {
                     return Err(format!(
                         "Casting from {:?} to {:?} is not implemented yet!",
@@ -246,6 +266,11 @@ fn cast(from: &Type, to: &Type, stack: &mut Vec<StackItem>) -> Result<(), String
                 Type::Int16 => stack.push(StackItem::Int16(v as i16)),
                 Type::Int32 => stack.push(StackItem::Int32(v)),
                 Type::Int64 => stack.push(StackItem::Int64(i64::from(v))),
+                Type::UInt8 => stack.push(StackItem::UInt8(v as u8)),
+                Type::UInt16 => stack.push(StackItem::UInt16(v as u16)),
+                Type::UInt32 => stack.push(StackItem::UInt32(v as u32)),
+                Type::UInt64 => stack.push(StackItem::UInt64(v as u64)),
+                Type::USize => stack.push(StackItem::USize(v as usize)),
                 _ => {
                     return Err(format!(
                         "Casting from {:?} to {:?} is not implemented yet!",
@@ -261,6 +286,111 @@ fn cast(from: &Type, to: &Type, stack: &mut Vec<StackItem>) -> Result<(), String
                 Type::Int16 => stack.push(StackItem::Int16(v as i16)),
                 Type::Int32 => stack.push(StackItem::Int32(v as i32)),
                 Type::Int64 => stack.push(StackItem::Int64(v)),
+                Type::UInt8 => stack.push(StackItem::UInt8(v as u8)),
+                Type::UInt16 => stack.push(StackItem::UInt16(v as u16)),
+                Type::UInt32 => stack.push(StackItem::UInt32(v as u32)),
+                Type::UInt64 => stack.push(StackItem::UInt64(v as u64)),
+                Type::USize => stack.push(StackItem::USize(v as usize)),
+                _ => {
+                    return Err(format!(
+                        "Casting from {:?} to {:?} is not implemented yet!",
+                        from, to
+                    ))
+                }
+            }
+        }
+        Type::UInt8 => {
+            let v = pop_as_u8(stack)?;
+            match to {
+                Type::Int8 => stack.push(StackItem::Int8(v as i8)),
+                Type::Int16 => stack.push(StackItem::Int16(i16::from(v))),
+                Type::Int32 => stack.push(StackItem::Int32(i32::from(v))),
+                Type::Int64 => stack.push(StackItem::Int64(i64::from(v))),
+                Type::UInt8 => stack.push(StackItem::UInt8(v as u8)),
+                Type::UInt16 => stack.push(StackItem::UInt16(v as u16)),
+                Type::UInt32 => stack.push(StackItem::UInt32(v as u32)),
+                Type::UInt64 => stack.push(StackItem::UInt64(v as u64)),
+                Type::USize => stack.push(StackItem::USize(v as usize)),
+                _ => {
+                    return Err(format!(
+                        "Casting from {:?} to {:?} is not implemented yet!",
+                        from, to
+                    ))
+                }
+            }
+        }
+        Type::UInt16 => {
+            let v = pop_as_u16(stack)?;
+            match to {
+                Type::Int8 => stack.push(StackItem::Int8(v as i8)),
+                Type::Int16 => stack.push(StackItem::Int16(v as i16)),
+                Type::Int32 => stack.push(StackItem::Int32(i32::from(v))),
+                Type::Int64 => stack.push(StackItem::Int64(i64::from(v))),
+                Type::UInt8 => stack.push(StackItem::UInt8(v as u8)),
+                Type::UInt16 => stack.push(StackItem::UInt16(v as u16)),
+                Type::UInt32 => stack.push(StackItem::UInt32(v as u32)),
+                Type::UInt64 => stack.push(StackItem::UInt64(v as u64)),
+                Type::USize => stack.push(StackItem::USize(v as usize)),
+                _ => {
+                    return Err(format!(
+                        "Casting from {:?} to {:?} is not implemented yet!",
+                        from, to
+                    ))
+                }
+            }
+        }
+        Type::UInt32 => {
+            let v = pop_as_u32(stack)?;
+            match to {
+                Type::Int8 => stack.push(StackItem::Int8(v as i8)),
+                Type::Int16 => stack.push(StackItem::Int16(v as i16)),
+                Type::Int32 => stack.push(StackItem::Int32(v as i32)),
+                Type::Int64 => stack.push(StackItem::Int64(i64::from(v))),
+                Type::UInt8 => stack.push(StackItem::UInt8(v as u8)),
+                Type::UInt16 => stack.push(StackItem::UInt16(v as u16)),
+                Type::UInt32 => stack.push(StackItem::UInt32(v as u32)),
+                Type::UInt64 => stack.push(StackItem::UInt64(v as u64)),
+                Type::USize => stack.push(StackItem::USize(v as usize)),
+                _ => {
+                    return Err(format!(
+                        "Casting from {:?} to {:?} is not implemented yet!",
+                        from, to
+                    ))
+                }
+            }
+        }
+        Type::UInt64 => {
+            let v = pop_as_u64(stack)?;
+            match to {
+                Type::Int8 => stack.push(StackItem::Int8(v as i8)),
+                Type::Int16 => stack.push(StackItem::Int16(v as i16)),
+                Type::Int32 => stack.push(StackItem::Int32(v as i32)),
+                Type::Int64 => stack.push(StackItem::Int64(v as i64)),
+                Type::UInt8 => stack.push(StackItem::UInt8(v as u8)),
+                Type::UInt16 => stack.push(StackItem::UInt16(v as u16)),
+                Type::UInt32 => stack.push(StackItem::UInt32(v as u32)),
+                Type::UInt64 => stack.push(StackItem::UInt64(v as u64)),
+                Type::USize => stack.push(StackItem::USize(v as usize)),
+                _ => {
+                    return Err(format!(
+                        "Casting from {:?} to {:?} is not implemented yet!",
+                        from, to
+                    ))
+                }
+            }
+        }
+        Type::USize => {
+            let v = pop_as_usize(stack)?;
+            match to {
+                Type::Int8 => stack.push(StackItem::Int8(v as i8)),
+                Type::Int16 => stack.push(StackItem::Int16(v as i16)),
+                Type::Int32 => stack.push(StackItem::Int32(v as i32)),
+                Type::Int64 => stack.push(StackItem::Int64(v as i64)),
+                Type::UInt8 => stack.push(StackItem::UInt8(v as u8)),
+                Type::UInt16 => stack.push(StackItem::UInt16(v as u16)),
+                Type::UInt32 => stack.push(StackItem::UInt32(v as u32)),
+                Type::UInt64 => stack.push(StackItem::UInt64(v as u64)),
+                Type::USize => stack.push(StackItem::USize(v as usize)),
                 _ => {
                     return Err(format!(
                         "Casting from {:?} to {:?} is not implemented yet!",
@@ -312,6 +442,11 @@ pub fn evaluate(code: &[ByteCode], writer: &mut dyn Write) -> Result<(), String>
                 Type::Int32 => register.push(StackItem::Int32(0)),
                 Type::Int16 => register.push(StackItem::Int16(0)),
                 Type::Int8 => register.push(StackItem::Int8(0)),
+                Type::UInt64 => register.push(StackItem::UInt64(0)),
+                Type::UInt32 => register.push(StackItem::UInt32(0)),
+                Type::UInt16 => register.push(StackItem::UInt16(0)),
+                Type::UInt8 => register.push(StackItem::UInt8(0)),
+                Type::USize => register.push(StackItem::USize(0)),
                 Type::Void | Type::Type => (),
             }
         }
@@ -327,6 +462,11 @@ pub fn evaluate(code: &[ByteCode], writer: &mut dyn Write) -> Result<(), String>
                     StackItem::Int16(v) => v.to_string(),
                     StackItem::Int32(v) => v.to_string(),
                     StackItem::Int64(v) => v.to_string(),
+                    StackItem::UInt8(v) => v.to_string(),
+                    StackItem::UInt16(v) => v.to_string(),
+                    StackItem::UInt32(v) => v.to_string(),
+                    StackItem::UInt64(v) => v.to_string(),
+                    StackItem::USize(v) => v.to_string(),
                     StackItem::Float32(v) => v.to_string(),
                     StackItem::Float64(v) => v.to_string(),
                 };
@@ -352,6 +492,11 @@ pub fn evaluate(code: &[ByteCode], writer: &mut dyn Write) -> Result<(), String>
             ByteCode::PushInt16(v) => stack.push(StackItem::Int16(*v)),
             ByteCode::PushInt32(v) => stack.push(StackItem::Int32(*v)),
             ByteCode::PushInt64(v) => stack.push(StackItem::Int64(*v)),
+            ByteCode::PushUInt8(v) => stack.push(StackItem::UInt8(*v)),
+            ByteCode::PushUInt16(v) => stack.push(StackItem::UInt16(*v)),
+            ByteCode::PushUInt32(v) => stack.push(StackItem::UInt32(*v)),
+            ByteCode::PushUInt64(v) => stack.push(StackItem::UInt64(*v)),
+            ByteCode::PushUSize(v) => stack.push(StackItem::USize(*v)),
             ByteCode::PushFloat32(v) => stack.push(StackItem::Float32(*v)),
             ByteCode::PushFloat64(v) => stack.push(StackItem::Float64(*v)),
             ByteCode::Add(dtype) => add(dtype, &mut stack)?,

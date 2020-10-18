@@ -290,4 +290,40 @@ mod e2e {
         let actual = bytecode::compile(&context, ast);
         assert_ok!(actual);
     }
+
+    #[test]
+    fn milestone_5_several() {
+        use self::Type::*;
+        let code = "#!/usr/bin/env ichop
+
+            a: i32 := 3
+            b: u8 := a as u8 + 5
+            c: u8 := 7
+            stdout max(b,c)";
+
+        let mut context = Context {
+            declarations: hashmap! {
+                "stdout".to_string() => Declaration::function(Void, vec![UInt8], true),
+                "max".to_string() => Declaration::full_template_function(2),
+                "min".to_string() => Declaration::full_template_function(2),
+                "u8".to_string() => Declaration::variable(Type),
+                "i32".to_string() => Declaration::variable(Type),
+            },
+        };
+        let tokens = lexer::lex(code).unwrap();
+        let mut state = parser::ParserState::new();
+        let mut ast = DenseAst::new();
+        while let Some((statement, new_state)) =
+            parser::parse(state, &mut context, &tokens).unwrap()
+        {
+            state = new_state;
+            let statement = generator::generate_sparse(statement).unwrap();
+            let statement = specializer::specialize(statement, &mut context).unwrap();
+            ast.statements.push(statement);
+        }
+        let ast = simplifier::simplify(ast).unwrap();
+        let actual = bytecode::compile(&context, ast);
+
+        assert_ok!(actual);
+    }
 }

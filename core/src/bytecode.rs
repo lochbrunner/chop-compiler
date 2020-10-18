@@ -12,6 +12,11 @@ pub enum ByteCode {
     PushInt16(i16),
     PushInt32(i32),
     PushInt64(i64),
+    PushUInt8(u8),
+    PushUInt16(u16),
+    PushUInt32(u32),
+    PushUInt64(u64),
+    PushUSize(usize),
     PushFloat32(f32),
     PushFloat64(f64),
     Add(Type),
@@ -112,6 +117,18 @@ fn unroll_node<'a>(
                 Type::Int64 => {
                     bytecode.push(ByteCode::PushInt64(v as i64));
                 }
+                Type::UInt8 => {
+                    bytecode.push(ByteCode::PushUInt8(v as u8));
+                }
+                Type::UInt16 => {
+                    bytecode.push(ByteCode::PushUInt16(v as u16));
+                }
+                Type::UInt32 => {
+                    bytecode.push(ByteCode::PushUInt32(v as u32));
+                }
+                Type::UInt64 => {
+                    bytecode.push(ByteCode::PushUInt64(v as u64));
+                }
                 _ => {
                     return Err(node.root.loc.to_error(format!(
                         "[E3]: An integer can not be of type {:?}",
@@ -159,7 +176,7 @@ fn unroll_node<'a>(
                     return Err(CompilerError::from_token::<DenseToken>(
                         &node.root,
                         format!(
-                            "[E4]: Signature of variable/function \"{}\" could not be resolved: {}",
+                            "[E5]: Signature of variable/function \"{}\" could not be resolved: {}",
                             ident, msg
                         ),
                     ))
@@ -171,7 +188,7 @@ fn unroll_node<'a>(
                 } else {
                     return Err(CompilerError::from_token::<DenseToken>(
                         &node.root,
-                        format!("[E5]: No Variable with name {} found in register", ident),
+                        format!("[E6]: No Variable with name {} found in register", ident),
                     ));
                 }
             } else {
@@ -183,7 +200,7 @@ fn unroll_node<'a>(
                         if arg_types.len() != 2 {
                             return Err(CompilerError::from_token::<DenseToken>(
                                 &node.root,
-                                format!("[E6]: No Function {} expects {} arguments, but only 2 arguments are supported yet.", ident, declaration.req_args_count()),
+                                format!("[E7]: No Function {} expects {} arguments, but only 2 arguments are supported yet.", ident, declaration.req_args_count()),
                             ));
                         }
                         bytecode.push(ByteCode::Call2(
@@ -202,7 +219,7 @@ fn unroll_node<'a>(
             if node.args.len() != 2 {
                 // TODO: Handle Type declaration
                 return Err(node.root.loc.to_error(format!(
-                    "[E7]: Exporter Error: DefineLocal need two arguments but got {}",
+                    "[E8]: Exporter Error: DefineLocal need two arguments but got {}",
                     node.args.len()
                 )));
             }
@@ -236,10 +253,7 @@ fn unroll_node<'a>(
         }
         AstTokenPayload::Pipe => Err(CompilerError {
             location: node.root.loc.clone(),
-            msg: format!(
-                "[E8]: Exporter Error: Unknown token {:?}",
-                node.root.payload
-            ),
+            msg: format!("[9]: Exporter Error: Unknown token {:?}", node.root.payload),
         }),
     }
 }
