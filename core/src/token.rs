@@ -1,18 +1,12 @@
+use crate::error::{Locatable, Location};
 use std::fmt;
-
-#[derive(Debug, Clone, PartialEq, Default)]
-pub struct Location {
-    pub line: u32,
-    pub begin: usize,
-    pub end: usize,
-}
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum TokenPayload {
     // Comment,
     Ident(String),
     // Literals
-    Int32(i32),
+    Integer(i64),
     // Float32(f32),
     // TODO: more literals
 
@@ -69,7 +63,17 @@ impl Token {
     pub fn stub(token: TokenPayload) -> Token {
         Token {
             token,
-            loc: Location { line: 0, begin: 0, end: 0 },
+            loc: Location {
+                line: 0,
+                begin: 0,
+                end: 0,
+            },
         }
+    }
+}
+
+impl Locatable for Token {
+    fn get_loc<'a>(&'a self) -> &'a Location {
+        &self.loc
     }
 }

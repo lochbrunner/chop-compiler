@@ -48,9 +48,9 @@ cchop <code filename> -o <output filename>
 1. [Mathematical operations and build-in functions](./milestones/3) :heavy_check_mark:
 1. [Variables](./milestones/4) :heavy_check_mark:
 1. [Primitive Types](./milestones/5)
-1. [Objects] (./milestones/6)
-1. [Functions] (./milestones/7)
-1. [Code generation from intermediate steps](./milestone/8)
+1. [Objects](./milestones/6)
+1. [Functions](./milestones/7)
+1. [Code generation from intermediate steps](./milestones/8)
 1. Enums
 1. Control flow
 1. Caching

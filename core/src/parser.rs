@@ -1,7 +1,8 @@
 use crate::ast;
+use crate::ast::{AstTokenPayload, SparseAst, SparseToken};
+use crate::declaration::{Context, Declaration, Type};
+use crate::error::{CompilerError, ToCompilerError};
 use crate::token::{Token, TokenPayload};
-use crate::CompilerError;
-use crate::{Context, Declaration, Type};
 
 #[derive(PartialEq, PartialOrd, Debug, Clone)]
 pub enum Precedence {
@@ -25,7 +26,7 @@ struct Infix {
 #[derive(Debug)]
 enum Symbol {
     Raw(Token),
-    Finished(ast::Node<Token>),
+    Finished(ast::Node<SparseToken>),
 }
 
 #[derive(Debug)]
@@ -34,17 +35,24 @@ struct ParseStack {
     pub infix: Vec<Infix>,
 }
 impl ParseStack {
-    pub fn pop_symbol_as_node(&mut self) -> Option<(ast::Node<Token>, bool)> {
+    pub fn pop_symbol_as_node(&mut self) -> Option<(ast::Node<SparseToken>, bool)> {
         match self.symbol.pop() {
             None => None,
             Some((sym, optional)) => Some(match sym {
-                Symbol::Raw(token) => (
-                    ast::Node {
-                        root: token,
-                        args: vec![],
-                    },
-                    optional,
-                ),
+                Symbol::Raw(token) => match AstTokenPayload::from(token.token) {
+                    Err(_) => return None,
+                    Ok(payload) => (
+                        ast::Node {
+                            root: SparseToken {
+                                payload,
+                                return_type: &|_| None,
+                                loc: token.loc,
+                            },
+                            args: vec![],
+                        },
+                        optional,
+                    ),
+                },
                 Symbol::Finished(node) => (node, optional),
             }),
         }
@@ -122,7 +130,11 @@ fn astify(_context: &Context, till: Precedence, stack: &mut ParseStack) -> Resul
         args.reverse();
         stack.symbol.push((
             Symbol::Finished(ast::Node {
-                root: op.token.clone(),
+                root: SparseToken {
+                    payload: AstTokenPayload::from(op.token.token)?,
+                    loc: op.token.loc,
+                    return_type: &|_| None,
+                },
                 args,
             }),
             true,
@@ -135,7 +147,7 @@ fn astify(_context: &Context, till: Precedence, stack: &mut ParseStack) -> Resul
 fn create_statement(
     context: &mut Context,
     stack: &mut ParseStack,
-) -> Result<ast::Node<Token>, CompilerError> {
+) -> Result<ast::Node<SparseToken>, CompilerError> {
     while let Some(op) = stack.infix.pop() {
         // How much args does the op need?
         if stack.symbol.len() < op.req_args_count {
@@ -147,34 +159,47 @@ fn create_statement(
         let mut args = vec![];
         let mut req_args_count = op.req_args_count;
         while req_args_count > 0 {
-            let (symbol, required) = stack.pop_symbol_as_node().unwrap();
-            match symbol.root.token {
-                TokenPayload::TypeDeclaration => (),
-                _ => {
+            match stack.pop_symbol_as_node() {
+                Some((symbol, required)) => {
                     args.push(symbol);
                     if required {
                         req_args_count -= 1;
                     }
                 }
+                None => (),
             }
+            // let (symbol, required) = stack.pop_symbol_as_node().unwrap_or();
+            // match symbol.root.payload {
+            //     AstTokenPayload::TypeDeclaration => (),
+            //     _ => {
+            //         args.push(symbol);
+            //         if required {
+            //             req_args_count -= 1;
+            //         }
+            //     }
+            // }
         }
         args.reverse();
-        let node = ast::Node {
-            root: op.token,
+        let node = ast::Node::<SparseToken> {
+            root: SparseToken {
+                payload: AstTokenPayload::from(op.token.token).convert(&op.token.loc)?,
+                loc: op.token.loc,
+                return_type: &|_| None,
+            },
             args,
         };
         if op.is_statement {
-            if node.root.token == TokenPayload::DefineLocal {
+            if node.root.payload == AstTokenPayload::DefineLocal {
                 // TODO: First attempt only
                 // Get ident
-                let first_token = &node.args.get(0).unwrap().root.token;
+                let first_token = &node.args.get(0).unwrap().root.payload;
                 // Get Type if available, else use default type
                 let type_token = if node.args.len() == 3 {
-                    Type::from_token(&node.args.get(1).unwrap().root)
+                    Type::from_sparse_token(&node.args.get(1).unwrap().root)
                 } else {
                     Type::Int32
                 };
-                if let TokenPayload::Ident(ref ident) = first_token {
+                if let AstTokenPayload::Symbol(ref ident) = first_token {
                     context.declarations.insert(
                         ident.clone(),
                         Declaration::function(type_token, vec![], false),
@@ -208,7 +233,7 @@ pub fn is_known_type(_context: &Context, ident: &str) -> bool {
 
 /// Turns a slice of tokens into an ast.
 /// Using [Shunting-yard algorithm](https://en.wikipedia.org/wiki/Shunting-yard_algorithm#/media/File:Shunting_yard.svg)
-pub fn parse(context: &mut Context, tokens: &[Token]) -> Result<ast::Ast, CompilerError> {
+pub fn parse(context: &mut Context, tokens: &[Token]) -> Result<SparseAst, CompilerError> {
     let mut stack = ParseStack {
         infix: Vec::new(),
         symbol: Vec::new(),
@@ -228,7 +253,7 @@ pub fn parse(context: &mut Context, tokens: &[Token]) -> Result<ast::Ast, Compil
             }),
             TokenPayload::Delimiter => {
                 if let Err(msg) = astify(context, Precedence::POpening, &mut stack) {
-                    return Err(CompilerError::from_token(
+                    return Err(CompilerError::from_token::<Token>(
                         token,
                         format!("Error on astify: {}", msg),
                     ));
@@ -236,7 +261,7 @@ pub fn parse(context: &mut Context, tokens: &[Token]) -> Result<ast::Ast, Compil
             }
             TokenPayload::ParenthesesR => {
                 if let Err(msg) = astify(context, Precedence::POpening, &mut stack) {
-                    return Err(CompilerError::from_token(
+                    return Err(CompilerError::from_token::<Token>(
                         token,
                         format!("Error on astify: {}", msg),
                     ));
@@ -262,13 +287,13 @@ pub fn parse(context: &mut Context, tokens: &[Token]) -> Result<ast::Ast, Compil
                                             stack.last_operator_is(&TokenPayload::Cast),
                                         ));
                                     } else {
-                                        return Err(CompilerError::from_token(
+                                        return Err(CompilerError::from_token::<Token>(
                                             token,
                                             format!("Type {} was not defined.", ident),
                                         ));
                                     }
                                 } else {
-                                    return Err(CompilerError::from_token(
+                                    return Err(CompilerError::from_token::<Token>(
                                         token,
                                         format!("Symbol {} was not defined.", ident),
                                     ));
@@ -295,7 +320,7 @@ pub fn parse(context: &mut Context, tokens: &[Token]) -> Result<ast::Ast, Compil
                 }
                 expect_function_as_variable = false;
             }
-            TokenPayload::Int32(_) => {
+            TokenPayload::Integer(_) => {
                 if stack.is_completable() {
                     statements.push(create_statement(context, &mut stack)?);
                 }
@@ -408,13 +433,12 @@ pub fn parse(context: &mut Context, tokens: &[Token]) -> Result<ast::Ast, Compil
 #[cfg(test)]
 mod specs {
     use super::*;
-    use crate::{Declaration, Type};
-    use ast::{DebugAst, Node};
+    use ast::Node;
     use TokenPayload::*;
     #[test]
     fn milestone_1() {
         let tokens = vec![
-            Token::stub(Int32(42)),
+            Token::stub(Integer(42)),
             Token::stub(Pipe),
             Token::stub(Ident("stdout".to_string())),
         ];
@@ -431,10 +455,10 @@ mod specs {
 
         let expected = ast::Ast {
             statements: vec![ast::Node {
-                root: Token::stub(Pipe),
+                root: SparseToken::stub(Pipe),
                 args: vec![
-                    ast::Node::leaf(Token::stub(Int32(42))),
-                    ast::Node::leaf(Token::stub(Ident("stdout".to_string()))),
+                    ast::Node::leaf(SparseToken::stub(Integer(42))),
+                    ast::Node::leaf(SparseToken::stub(Ident("stdout".to_string()))),
                 ],
             }],
         };
@@ -447,7 +471,7 @@ mod specs {
         let tokens = vec![
             Token::stub(Ident("stdout".to_string())),
             Token::stub(ParenthesesL),
-            Token::stub(Int32(42)),
+            Token::stub(Integer(42)),
             Token::stub(ParenthesesR),
         ];
 
@@ -464,9 +488,9 @@ mod specs {
 
         let expected = ast::Ast {
             statements: vec![ast::Node {
-                root: Token::stub(Ident("stdout".to_string())),
+                root: SparseToken::stub(Ident("stdout".to_string())),
                 args: vec![ast::Node {
-                    root: Token::stub(Int32(42)),
+                    root: SparseToken::stub(Integer(42)),
                     args: vec![],
                 }],
             }],
@@ -479,7 +503,7 @@ mod specs {
     fn function_without_braces() {
         let tokens = vec![
             Token::stub(Ident("stdout".to_string())),
-            Token::stub(Int32(42)),
+            Token::stub(Integer(42)),
         ];
 
         let mut context = Context {
@@ -494,9 +518,9 @@ mod specs {
         let actual = actual.unwrap();
         let expected = ast::Ast {
             statements: vec![ast::Node {
-                root: Token::stub(Ident("stdout".to_string())),
+                root: SparseToken::stub(Ident("stdout".to_string())),
                 args: vec![ast::Node {
-                    root: Token::stub(Int32(42)),
+                    root: SparseToken::stub(Integer(42)),
                     args: vec![],
                 }],
             }],
@@ -509,9 +533,9 @@ mod specs {
     fn milestone_3_print_sum() {
         let tokens = vec![
             Token::stub(Ident("stdout".to_string())),
-            Token::stub(Int32(3)),
+            Token::stub(Integer(3)),
             Token::stub(Add),
-            Token::stub(Int32(5)),
+            Token::stub(Integer(5)),
         ];
 
         let mut context = Context {
@@ -528,10 +552,13 @@ mod specs {
 
         let expected = ast::DebugAst {
             statements: vec![Node {
-                root: Ident("stdout".to_string()),
+                root: AstTokenPayload::from(Ident("stdout".to_string())).unwrap(),
                 args: vec![Node {
-                    root: Add,
-                    args: vec![Node::leaf(Int32(3)), Node::leaf(Int32(5))],
+                    root: AstTokenPayload::from(Add).unwrap(),
+                    args: vec![
+                        Node::leaf(AstTokenPayload::from(Integer(3)).unwrap()),
+                        Node::leaf(AstTokenPayload::from(Integer(5)).unwrap()),
+                    ],
                 }],
             }],
         };
@@ -541,13 +568,14 @@ mod specs {
 
     #[test]
     fn milestone_3_print_term() {
+        // stdout 3 + 5*7
         let tokens = vec![
             Token::stub(Ident("stdout".to_string())),
-            Token::stub(Int32(3)),
+            Token::stub(Integer(3)),
             Token::stub(Add),
-            Token::stub(Int32(5)),
+            Token::stub(Integer(5)),
             Token::stub(Multiply),
-            Token::stub(Int32(7)),
+            Token::stub(Integer(7)),
         ];
 
         let mut context = Context {
@@ -560,18 +588,20 @@ mod specs {
 
         assert!(actual.is_ok());
         let actual = actual.unwrap();
-        let actual = ast::DebugAst::from(actual);
 
-        let expected = ast::DebugAst {
+        let expected = ast::SparseAst {
             statements: vec![Node {
-                root: Ident("stdout".to_string()),
+                root: SparseToken::stub(Ident("stdout".to_string())),
                 args: vec![Node {
-                    root: Add,
+                    root: SparseToken::stub(Add),
                     args: vec![
-                        Node::leaf(Int32(3)),
+                        Node::leaf(SparseToken::stub(Integer(3))),
                         Node {
-                            root: Multiply,
-                            args: vec![Node::leaf(Int32(5)), Node::leaf(Int32(7))],
+                            root: SparseToken::stub(Multiply),
+                            args: vec![
+                                Node::leaf(SparseToken::stub(Integer(5))),
+                                Node::leaf(SparseToken::stub(Integer(7))),
+                            ],
                         },
                     ],
                 }],
@@ -587,12 +617,12 @@ mod specs {
         let tokens = vec![
             Token::stub(Ident("stdout".to_string())),
             Token::stub(ParenthesesL),
-            Token::stub(Int32(3)),
+            Token::stub(Integer(3)),
             Token::stub(Add),
-            Token::stub(Int32(5)),
+            Token::stub(Integer(5)),
             Token::stub(ParenthesesR),
             Token::stub(Multiply),
-            Token::stub(Int32(7)),
+            Token::stub(Integer(7)),
         ];
 
         let mut context = Context {
@@ -605,19 +635,22 @@ mod specs {
 
         assert!(actual.is_ok());
         let actual = actual.unwrap();
-        let actual = ast::DebugAst::from(actual);
+        // let actual = ast::DebugAst::from(actual);
 
-        let expected = ast::DebugAst {
+        let expected = ast::SparseAst {
             statements: vec![Node {
-                root: Ident("stdout".to_string()),
+                root: SparseToken::stub(Ident("stdout".to_string())),
                 args: vec![Node {
-                    root: Multiply,
+                    root: SparseToken::stub(Multiply),
                     args: vec![
                         Node {
-                            root: Add,
-                            args: vec![Node::leaf(Int32(3)), Node::leaf(Int32(5))],
+                            root: SparseToken::stub(Add),
+                            args: vec![
+                                Node::leaf(SparseToken::stub(Integer(3))),
+                                Node::leaf(SparseToken::stub(Integer(5))),
+                            ],
                         },
-                        Node::leaf(Int32(7)),
+                        Node::leaf(SparseToken::stub(Integer(7))),
                     ],
                 }],
             }],
@@ -633,9 +666,9 @@ mod specs {
             Ident("stdout".to_string()),
             Ident("max".to_string()),
             ParenthesesL,
-            Int32(3),
+            Integer(3),
             Delimiter,
-            Int32(5),
+            Integer(5),
             ParenthesesR,
         ];
 
@@ -656,14 +689,17 @@ mod specs {
 
         assert!(actual.is_ok());
         let actual = actual.unwrap();
-        let actual = ast::DebugAst::from(actual);
+        // let actual = ast::DebugAst::from(actual);
 
-        let expected = ast::DebugAst {
+        let expected = ast::SparseAst {
             statements: vec![Node {
-                root: Ident("stdout".to_string()),
+                root: SparseToken::stub(Ident("stdout".to_string())),
                 args: vec![Node {
-                    root: Ident("max".to_string()),
-                    args: vec![Node::leaf(Int32(3)), Node::leaf(Int32(5))],
+                    root: SparseToken::stub(Ident("max".to_string())),
+                    args: vec![
+                        Node::leaf(SparseToken::stub(Integer(3))),
+                        Node::leaf(SparseToken::stub(Integer(5))),
+                    ],
                 }],
             }],
         };
@@ -678,17 +714,17 @@ mod specs {
             Ident("stdout".to_string()),
             Ident("max".to_string()),
             ParenthesesL,
-            Int32(3),
+            Integer(3),
             Add,
-            Int32(5),
+            Integer(5),
             Multiply,
-            Int32(-7),
+            Integer(-7),
             Delimiter,
-            Int32(11),
+            Integer(11),
             Multiply,
-            Int32(13),
+            Integer(13),
             Subtract,
-            Int32(15),
+            Integer(15),
             ParenthesesR,
         ];
 
@@ -709,32 +745,38 @@ mod specs {
 
         assert!(actual.is_ok());
         let actual = actual.unwrap();
-        let actual = ast::DebugAst::from(actual);
+        // let actual = ast::DebugAst::from(actual);
 
-        let expected = DebugAst {
+        let expected = SparseAst {
             statements: vec![Node {
-                root: Ident("stdout".to_string()),
+                root: SparseToken::stub(Ident("stdout".to_string())),
                 args: vec![Node {
-                    root: Ident("max".to_string()),
+                    root: SparseToken::stub(Ident("max".to_string())),
                     args: vec![
                         Node {
-                            root: Add,
+                            root: SparseToken::stub(Add),
                             args: vec![
-                                Node::leaf(Int32(3)),
+                                Node::leaf(SparseToken::stub(Integer(3))),
                                 Node {
-                                    root: Multiply,
-                                    args: vec![Node::leaf(Int32(5)), Node::leaf(Int32(-7))],
+                                    root: SparseToken::stub(Multiply),
+                                    args: vec![
+                                        Node::leaf(SparseToken::stub(Integer(5))),
+                                        Node::leaf(SparseToken::stub(Integer(-7))),
+                                    ],
                                 },
                             ],
                         },
                         Node {
-                            root: Subtract,
+                            root: SparseToken::stub(Subtract),
                             args: vec![
                                 Node {
-                                    root: Multiply,
-                                    args: vec![Node::leaf(Int32(11)), Node::leaf(Int32(13))],
+                                    root: SparseToken::stub(Multiply),
+                                    args: vec![
+                                        Node::leaf(SparseToken::stub(Integer(11))),
+                                        Node::leaf(SparseToken::stub(Integer(13))),
+                                    ],
                                 },
-                                Node::leaf(Int32(15)),
+                                Node::leaf(SparseToken::stub(Integer(15))),
                             ],
                         },
                     ],
@@ -751,7 +793,7 @@ mod specs {
             // a := 3
             Ident("a".to_string()),
             DefineLocal,
-            Int32(3),
+            Integer(3),
         ];
 
         let mut context = Context {
@@ -768,11 +810,14 @@ mod specs {
 
         assert!(actual.is_ok());
         let actual = actual.unwrap();
-        let actual = ast::DebugAst::from(actual);
-        let expected = DebugAst {
+        // let actual = ast::DebugAst::from(actual);
+        let expected = SparseAst {
             statements: vec![Node {
-                root: DefineLocal,
-                args: vec![Node::leaf(Ident("a".to_string())), Node::leaf(Int32(3))],
+                root: SparseToken::stub(DefineLocal),
+                args: vec![
+                    Node::leaf(SparseToken::stub(Ident("a".to_string()))),
+                    Node::leaf(SparseToken::stub(Integer(3))),
+                ],
             }],
         };
         assert_eq!(actual, expected);
@@ -790,9 +835,9 @@ mod specs {
             // a := 3+5
             Ident("a".to_string()),
             DefineLocal,
-            Int32(3),
+            Integer(3),
             Add,
-            Int32(5),
+            Integer(5),
         ];
 
         let mut context = Context {
@@ -809,15 +854,18 @@ mod specs {
 
         assert!(actual.is_ok());
         let actual = actual.unwrap();
-        let actual = ast::DebugAst::from(actual);
-        let expected = DebugAst {
+        // let actual = ast::DebugAst::from(actual);
+        let expected = SparseAst {
             statements: vec![Node {
-                root: DefineLocal,
+                root: SparseToken::stub(DefineLocal),
                 args: vec![
-                    Node::leaf(Ident("a".to_string())),
+                    Node::leaf(SparseToken::stub(Ident("a".to_string()))),
                     Node {
-                        root: Add,
-                        args: vec![Node::leaf(Int32(3)), Node::leaf(Int32(5))],
+                        root: SparseToken::stub(Add),
+                        args: vec![
+                            Node::leaf(SparseToken::stub(Integer(3))),
+                            Node::leaf(SparseToken::stub(Integer(5))),
+                        ],
                     },
                 ],
             }],
@@ -837,17 +885,17 @@ mod specs {
             // a := 3
             Ident("a".to_string()),
             DefineLocal,
-            Int32(3),
+            Integer(3),
             // b := a + 5
             Ident("b".to_string()),
             DefineLocal,
             Ident("a".to_string()),
             Add,
-            Int32(5),
+            Integer(5),
             // c := 7
             Ident("c".to_string()),
             DefineLocal,
-            Int32(7),
+            Integer(7),
             // stdout max(b,c)
             Ident("stdout".to_string()),
             Ident("max".to_string()),
@@ -874,34 +922,44 @@ mod specs {
         );
 
         assert!(actual.is_ok());
-        let actual = ast::DebugAst::from(actual.unwrap());
-        let expected = DebugAst {
+        let actual = actual.unwrap();
+        // let actual = ast::DebugAst::from(actual.unwrap());
+        let expected = SparseAst {
             statements: vec![
                 Node {
-                    root: DefineLocal,
-                    args: vec![Node::leaf(Ident("a".to_string())), Node::leaf(Int32(3))],
+                    root: SparseToken::stub(DefineLocal),
+                    args: vec![
+                        Node::leaf(SparseToken::stub(Ident("a".to_string()))),
+                        Node::leaf(SparseToken::stub(Integer(3))),
+                    ],
                 },
                 Node {
-                    root: DefineLocal,
+                    root: SparseToken::stub(DefineLocal),
                     args: vec![
-                        Node::leaf(Ident("b".to_string())),
+                        Node::leaf(SparseToken::stub(Ident("b".to_string()))),
                         Node {
-                            root: Add,
-                            args: vec![Node::leaf(Ident("a".to_string())), Node::leaf(Int32(5))],
+                            root: SparseToken::stub(Add),
+                            args: vec![
+                                Node::leaf(SparseToken::stub(Ident("a".to_string()))),
+                                Node::leaf(SparseToken::stub(Integer(5))),
+                            ],
                         },
                     ],
                 },
                 Node {
-                    root: DefineLocal,
-                    args: vec![Node::leaf(Ident("c".to_string())), Node::leaf(Int32(7))],
+                    root: SparseToken::stub(DefineLocal),
+                    args: vec![
+                        Node::leaf(SparseToken::stub(Ident("c".to_string()))),
+                        Node::leaf(SparseToken::stub(Integer(7))),
+                    ],
                 },
                 Node {
-                    root: Ident("stdout".to_string()),
+                    root: SparseToken::stub(Ident("stdout".to_string())),
                     args: vec![Node {
-                        root: Ident("max".to_string()),
+                        root: SparseToken::stub(Ident("max".to_string())),
                         args: vec![
-                            Node::leaf(Ident("b".to_string())),
-                            Node::leaf(Ident("c".to_string())),
+                            Node::leaf(SparseToken::stub(Ident("b".to_string()))),
+                            Node::leaf(SparseToken::stub(Ident("c".to_string()))),
                         ],
                     }],
                 },
@@ -934,7 +992,7 @@ mod specs {
             TypeDeclaration,
             Ident("i16".to_string()),
             DefineLocal,
-            Int32(3),
+            Integer(3),
             // stdout a
             Ident("stdout".to_string()),
             Ident("a".to_string()),
@@ -955,21 +1013,22 @@ mod specs {
         );
 
         assert!(actual.is_ok());
-        let actual = ast::DebugAst::from(actual.unwrap());
+        let actual = actual.unwrap();
+        // let actual = ast::DebugAst::from(actual.unwrap());
 
-        let expected = ast::DebugAst {
+        let expected = ast::SparseAst {
             statements: vec![
                 Node {
-                    root: DefineLocal,
+                    root: SparseToken::stub(DefineLocal),
                     args: vec![
-                        Node::leaf(Ident("a".to_string())),
-                        Node::leaf(Ident("i16".to_string())),
-                        Node::leaf(Int32(3)),
+                        Node::leaf(SparseToken::stub(Ident("a".to_string()))),
+                        Node::leaf(SparseToken::stub(Ident("i16".to_string()))),
+                        Node::leaf(SparseToken::stub(Integer(3))),
                     ],
                 },
                 Node {
-                    root: Ident("stdout".to_string()),
-                    args: vec![Node::leaf(Ident("a".to_string()))],
+                    root: SparseToken::stub(Ident("stdout".to_string())),
+                    args: vec![Node::leaf(SparseToken::stub(Ident("a".to_string())))],
                 },
             ],
         };
@@ -990,7 +1049,7 @@ mod specs {
             TypeDeclaration,
             Ident("i32".to_string()),
             DefineLocal,
-            Int32(3),
+            Integer(3),
             // b: i8 := a as i8 + 5
             Ident("b".to_string()),
             TypeDeclaration,
@@ -1000,13 +1059,13 @@ mod specs {
             Cast,
             Ident("i8".to_string()),
             Add,
-            Int32(5),
+            Integer(5),
             // c: i8 := 7
             Ident("c".to_string()),
             TypeDeclaration,
             Ident("i8".to_string()),
             DefineLocal,
-            Int32(7),
+            Integer(7),
             // stdout max(b,c)
             Ident("stdout".to_string()),
             Ident("max".to_string()),
@@ -1033,53 +1092,54 @@ mod specs {
         );
 
         assert!(actual.is_ok());
-        let actual = ast::DebugAst::from(actual.unwrap());
+        let actual = actual.unwrap();
+        // let actual = ast::DebugAst::from(actual.unwrap());
 
-        let expected = ast::DebugAst {
+        let expected = ast::SparseAst {
             statements: vec![
                 Node {
-                    root: DefineLocal,
+                    root: SparseToken::stub(DefineLocal),
                     args: vec![
-                        Node::leaf(Ident("a".to_string())),
-                        Node::leaf(Ident("i32".to_string())),
-                        Node::leaf(Int32(3)),
+                        Node::leaf(SparseToken::stub(Ident("a".to_string()))),
+                        Node::leaf(SparseToken::stub(Ident("i32".to_string()))),
+                        Node::leaf(SparseToken::stub(Integer(3))),
                     ],
                 },
                 Node {
-                    root: DefineLocal,
+                    root: SparseToken::stub(DefineLocal),
                     args: vec![
-                        Node::leaf(Ident("b".to_string())),
-                        Node::leaf(Ident("i8".to_string())),
+                        Node::leaf(SparseToken::stub(Ident("b".to_string()))),
+                        Node::leaf(SparseToken::stub(Ident("i8".to_string()))),
                         Node {
-                            root: Add,
+                            root: SparseToken::stub(Add),
                             args: vec![
                                 Node {
-                                    root: Cast,
+                                    root: SparseToken::stub(Cast),
                                     args: vec![
-                                        Node::leaf(Ident("a".to_string())),
-                                        Node::leaf(Ident("i8".to_string())),
+                                        Node::leaf(SparseToken::stub(Ident("a".to_string()))),
+                                        Node::leaf(SparseToken::stub(Ident("i8".to_string()))),
                                     ],
                                 },
-                                Node::leaf(Int32(5)),
+                                Node::leaf(SparseToken::stub(Integer(5))),
                             ],
                         },
                     ],
                 },
                 Node {
-                    root: DefineLocal,
+                    root: SparseToken::stub(DefineLocal),
                     args: vec![
-                        Node::leaf(Ident("c".to_string())),
-                        Node::leaf(Ident("i8".to_string())),
-                        Node::leaf(Int32(7)),
+                        Node::leaf(SparseToken::stub(Ident("c".to_string()))),
+                        Node::leaf(SparseToken::stub(Ident("i8".to_string()))),
+                        Node::leaf(SparseToken::stub(Integer(7))),
                     ],
                 },
                 Node {
-                    root: Ident("stdout".to_string()),
+                    root: SparseToken::stub(Ident("stdout".to_string())),
                     args: vec![Node {
-                        root: Ident("max".to_string()),
+                        root: SparseToken::stub(Ident("max".to_string())),
                         args: vec![
-                            Node::leaf(Ident("b".to_string())),
-                            Node::leaf(Ident("c".to_string())),
+                            Node::leaf(SparseToken::stub(Ident("b".to_string()))),
+                            Node::leaf(SparseToken::stub(Ident("c".to_string()))),
                         ],
                     }],
                 },

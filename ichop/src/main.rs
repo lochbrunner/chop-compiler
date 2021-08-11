@@ -11,7 +11,7 @@ use std::io;
 
 fn run(filename: &str) -> Result<(), ()> {
     match fs::read_to_string(filename) {
-        Ok(code) => match core::compile(&code) {
+        Ok(code) => match core::build(&code) {
             Err(error) => {
                 error.print(filename);
                 if let Some(line) = code.lines().nth(error.location.line as usize - 1) {

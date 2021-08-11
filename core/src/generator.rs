@@ -1,42 +1,68 @@
-use crate::ast::{Ast, Node};
-use crate::token::TokenPayload;
+use crate::ast::{AstTokenPayload, DenseAst, SparseAst, Node};
 use crate::CompilerError;
 
-/// Fills out the macros and runs all the custom compiler stuff.
-pub fn generate(ast: Ast) -> Result<Ast, CompilerError> {
+
+pub fn generate_sparse(ast: SparseAst) -> Result<SparseAst, CompilerError> {
     let statements = ast
         .statements
         .into_iter()
-        .map(|statement| match statement.root.token {
-            TokenPayload::Pipe => Ok(Node {
+        .map(|statement| match statement.root.payload {
+            AstTokenPayload::Pipe => Ok(Node {
                 root: statement.args[1].root.clone(),
                 args: vec![statement.args[0].clone()],
             }),
-            TokenPayload::Ident(_) => Ok(statement), // Function Call
-            TokenPayload::DefineLocal => Ok(statement),
+            AstTokenPayload::Symbol(_) => Ok(statement), // Function Call
+            AstTokenPayload::DefineLocal => Ok(statement),
             _ => Err(CompilerError {
                 location: statement.root.loc.clone(),
                 msg: format!(
                     "Generator Error: Token {:?} is not implemented yet!",
-                    statement.root.token
+                    statement.root.payload
                 ),
             }),
         })
         .collect::<Result<Vec<_>, _>>()?;
-    Ok(Ast { statements })
+    Ok(SparseAst { statements })
+}
+
+/// Fills out the macros and runs all the custom compiler stuff.
+pub fn generate(ast: DenseAst) -> Result<DenseAst, CompilerError> {
+    let statements = ast
+        .statements
+        .into_iter()
+        .map(|statement| match statement.root.payload {
+            AstTokenPayload::Pipe => Ok(Node {
+                root: statement.args[1].root.clone(),
+                args: vec![statement.args[0].clone()],
+            }),
+            AstTokenPayload::Symbol(_) => Ok(statement), // Function Call
+            AstTokenPayload::DefineLocal => Ok(statement),
+            _ => Err(CompilerError {
+                location: statement.root.loc.clone(),
+                msg: format!(
+                    "Generator Error: Token {:?} is not implemented yet!",
+                    statement.root.payload
+                ),
+            }),
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(DenseAst { statements })
 }
 
 #[cfg(test)]
 mod specs {
     use super::*;
-    use crate::token::{Location, Token, TokenPayload};
+    use crate::ast::{DenseToken, IntegerProvider};
+    use crate::declaration::Type;
+    use crate::error::Location;
 
     #[test]
     fn milestone_1() {
-        let input = Ast {
+        let input = DenseAst {
             statements: vec![Node {
-                root: Token {
-                    token: TokenPayload::Pipe,
+                root: DenseToken {
+                    payload: AstTokenPayload::Pipe,
+                    return_type: Type::Int32,
                     loc: Location {
                         line: 3,
                         begin: 31,
@@ -44,16 +70,18 @@ mod specs {
                     },
                 },
                 args: vec![
-                    Node::leaf(Token {
-                        token: TokenPayload::Int32(42),
+                    Node::leaf(DenseToken {
+                        payload: AstTokenPayload::Integer(IntegerProvider { content: 42 }),
+                        return_type: Type::Int32,
                         loc: Location {
                             line: 3,
                             begin: 28,
                             end: 30,
                         },
                     }),
-                    Node::leaf(Token {
-                        token: TokenPayload::Ident("stdout".to_owned()),
+                    Node::leaf(DenseToken {
+                        payload: AstTokenPayload::Symbol("stdout".to_owned()),
+                        return_type: Type::Int32,
                         loc: Location {
                             line: 3,
                             begin: 33,
@@ -67,18 +95,20 @@ mod specs {
         let actual = generate(input);
         assert!(actual.is_ok());
         let actual = actual.unwrap();
-        let expected = Ast {
+        let expected = DenseAst {
             statements: vec![Node {
-                root: Token {
-                    token: TokenPayload::Ident("stdout".to_owned()),
+                root: DenseToken {
+                    payload: AstTokenPayload::Symbol("stdout".to_owned()),
+                    return_type: Type::Int32,
                     loc: Location {
                         line: 3,
                         begin: 33,
                         end: 39,
                     },
                 },
-                args: vec![Node::leaf(Token {
-                    token: TokenPayload::Int32(42),
+                args: vec![Node::leaf(DenseToken {
+                    payload: AstTokenPayload::Integer(IntegerProvider { content: 42 }),
+                    return_type: Type::Int32,
                     loc: Location {
                         line: 3,
                         begin: 28,
