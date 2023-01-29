@@ -57,14 +57,14 @@ fn specialize_declaration(
     let (name, value, dtype) = match args.len() {
         2 => {
             let (name, value) = destruct_vector_2(args);
-            let value = specialize_node(context)((value, None))?;
+            let value = specialize_node(context, value, None)?;
             let dtype = value.root.return_type.clone();
             (name, value, dtype)
         }
         3 => {
             let (name, dtype, value) = destruct_vector_3(args);
             let dtype = Some(Type::from_sparse_token(&dtype.root));
-            let value = specialize_node(context)((value, dtype.clone()))?;
+            let value = specialize_node(context, value, dtype.clone())?;
             (name, value, dtype.unwrap())
         }
         _ => {
@@ -80,7 +80,7 @@ fn specialize_declaration(
         context
             .declarations
             .insert(name_symbol.to_owned(), Declaration::variable(dtype.clone()));
-        let name = specialize_node(context)((name, None))?;
+        let name = specialize_node(context, name, None)?;
         let args = vec![name, value];
         Ok(DenseNode {
             root: DenseToken {
@@ -111,8 +111,8 @@ fn specialize_cast(
     } else {
         let (value, type_node) = destruct_vector_2(args);
         let dtype = Type::from_sparse_token(&type_node.root);
-        let value = specialize_node(context)((value, None))?;
-        let cast = specialize_node(context)((type_node, Some(Type::Type)))?;
+        let value = specialize_node(context, value, None)?;
+        let cast = specialize_node(context, type_node, Some(Type::Type))?;
         let args = vec![value, cast];
         Ok(DenseNode {
             root: DenseToken {
@@ -140,8 +140,8 @@ pub fn specialize_binary_op(
     } else {
         let (a, b) = destruct_vector_2(args);
 
-        let a = specialize_node(context)((a, expected))?;
-        let b = specialize_node(context)((b, Some(a.root.return_type.clone())))?;
+        let a = specialize_node(context, a, expected)?;
+        let b = specialize_node(context, b, Some(a.root.return_type.clone()))?;
         let dtype = b.root.return_type.clone();
 
         let args = vec![a, b];
@@ -177,7 +177,7 @@ fn specialize_symbol(
     let args = args
         .into_iter()
         .zip(decl_args.into_iter())
-        .map(specialize_node(context))
+        .map(|(n, e)| specialize_node(context, n, e))
         .collect::<Result<Vec<_>, CompilerError>>()?;
 
     let arg_types = args
@@ -221,77 +221,74 @@ fn specialize_symbol(
 
 fn specialize_node<'a>(
     context: &'a mut Context,
-) -> impl FnMut((SparseNode<'a>, Option<Type>)) -> Result<DenseNode, CompilerError> {
-    move |(node, expected)| {
-        let SparseNode {
-            root:
-                SparseToken {
+    node: SparseNode<'a>,
+    expected: Option<Type>,
+) -> Result<DenseNode, CompilerError> {
+    let SparseNode {
+        root: SparseToken {
+            payload,
+            loc,
+            return_type,
+        },
+        args,
+    } = node;
+    match &payload {
+        AstTokenPayload::DefineLocal(_) => specialize_declaration(args, loc, context),
+        AstTokenPayload::Cast => specialize_cast(args, loc, context),
+        AstTokenPayload::Add
+        | AstTokenPayload::Subtract
+        | AstTokenPayload::Multiply
+        | AstTokenPayload::Divide
+        | AstTokenPayload::Remainder => specialize_binary_op(payload, args, loc, expected, context),
+        AstTokenPayload::Symbol(ident) => specialize_symbol(ident, args, loc, expected, context),
+        // What are the expected types
+        AstTokenPayload::Integer(_) => {
+            let expected = expected.unwrap_or(Type::Int32);
+            let args = args
+                .into_iter()
+                .map(|s| (s, None))
+                .map(|(n, e)| specialize_node(context, n, e))
+                .collect::<Result<Vec<_>, CompilerError>>()?;
+            // Find type child from parent
+            let r_type = return_type(None).unwrap_or(expected);
+            Ok(DenseNode {
+                root: DenseToken {
                     payload,
                     loc,
-                    return_type,
+                    return_type: r_type,
                 },
-            args,
-        } = node;
-        match &payload {
-            AstTokenPayload::DefineLocal(_) => specialize_declaration(args, loc, context),
-            AstTokenPayload::Cast => specialize_cast(args, loc, context),
-            AstTokenPayload::Add
-            | AstTokenPayload::Subtract
-            | AstTokenPayload::Multiply
-            | AstTokenPayload::Divide
-            | AstTokenPayload::Remainder => {
-                specialize_binary_op(payload, args, loc, expected, context)
-            }
-            AstTokenPayload::Symbol(ident) => {
-                specialize_symbol(ident, args, loc, expected, context)
-            }
-            // What are the expected types
-            AstTokenPayload::Integer(_) => {
-                let expected = expected.unwrap_or(Type::Int32);
-                let args = args
-                    .into_iter()
-                    .map(|s| (s, None))
-                    .map(specialize_node(context))
-                    .collect::<Result<Vec<_>, CompilerError>>()?;
-                // Find type child from parent
-                let r_type = return_type(None).unwrap_or(expected);
-                Ok(DenseNode {
-                    root: DenseToken {
-                        payload,
-                        loc,
-                        return_type: r_type,
-                    },
-                    args,
-                })
-            }
-            AstTokenPayload::Float(_) => {
-                let expected = expected.unwrap_or(Type::Float32);
-                let args = args
-                    .into_iter()
-                    .map(|s| (s, None))
-                    .map(specialize_node(context))
-                    .collect::<Result<Vec<_>, CompilerError>>()?;
-                // Find type child from parent
-                let r_type = return_type(None).unwrap_or(expected);
-                Ok(DenseNode {
-                    root: DenseToken {
-                        payload,
-                        loc,
-                        return_type: r_type,
-                    },
-                    args,
-                })
-            }
-            _ => Err(loc.to_error(format!("[S2] Unexpected token {:?}", payload))),
+                args,
+            })
         }
+        AstTokenPayload::Float(_) => {
+            let expected = expected.unwrap_or(Type::Float32);
+            let args = args
+                .into_iter()
+                .map(|s| (s, None))
+                .map(|(n, e)| specialize_node(context, n, e))
+                .collect::<Result<Vec<_>, CompilerError>>()?;
+            // Find type child from parent
+            let r_type = return_type(None).unwrap_or(expected);
+            Ok(DenseNode {
+                root: DenseToken {
+                    payload,
+                    loc,
+                    return_type: r_type,
+                },
+                args,
+            })
+        }
+        _ => Err(loc.to_error(format!("[S2] Unexpected token {:?}", payload))),
     }
 }
 
+/// Takes an sparse AST. A sparse AST does not contain all type information for a symbol or function.
+/// This function tries to figure out these types and fills gaps.
 pub fn specialize<'a>(
     node: SparseNode<'a>,
     context: &mut Context,
 ) -> Result<DenseNode, CompilerError> {
-    specialize_node(context)((node, None))
+    specialize_node(context, node, None)
 }
 
 #[cfg(test)]

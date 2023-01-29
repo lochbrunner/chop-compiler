@@ -510,7 +510,7 @@ pub fn evaluate(code: &[ByteCode], writer: &mut dyn Write) -> Result<(), String>
             }
             ByteCode::Alloca(_) => (),
             ByteCode::CastInt(from, to) => cast(from, to, &mut stack)?,
-            _ => return Err(format!("Illegal instruction {:?}", instruction)),
+            // _ => return Err(format!("Illegal instruction {:?}", instruction)),
         }
     }
     Ok(())
@@ -520,7 +520,7 @@ pub fn evaluate(code: &[ByteCode], writer: &mut dyn Write) -> Result<(), String>
 mod specs {
     #![macro_use]
     macro_rules! assert_ok(
-        ($result:expr) => (assert!($result.is_ok(), format!("Not ok: {:?}", $result.unwrap_err())));
+        ($result:expr) => (assert!($result.is_ok(), "Not ok: {:?}", $result.unwrap_err()));
     );
     use super::*;
     use std::io::Cursor;
