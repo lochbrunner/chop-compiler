@@ -38,7 +38,10 @@ fn run(input: &str, output: &str, emit_llvm: bool) -> Result<(), ()> {
                             match link::link(&llvm_file, output, wd, file_stem) {
                                 Ok(_) => Ok(()),
                                 Err(msg) => {
-                                    eprintln!("Could not link to file {}: {}", output, msg);
+                                    eprintln!(
+                                        "Could not link to file {} to {}: {}",
+                                        llvm_file, output, msg
+                                    );
                                     Err(())
                                 }
                             }
@@ -82,7 +85,7 @@ fn main() {
         .arg(
             Arg::with_name("emit-llvm")
                 .long("--emit-llvm")
-                .help("output filename"),
+                .help("Dumps LLVM code."),
         )
         .get_matches();
 

@@ -10,3 +10,4 @@ edition = "2018"
 clap = "2.33.0"
 maplit = "^1.0.1"
 core = {path = "../core"}
+paste = "1.0"

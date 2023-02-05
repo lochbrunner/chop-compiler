@@ -3,9 +3,7 @@
 [![GitHub Actions status](https://github.com/lochbrunner/chop-compiler/workflows/milestones-ichop/badge.svg)](https://github.com/lochbrunner/chop-compiler/actions?workflow=milestones-ichop)
 [![GitHub Actions status](https://github.com/lochbrunner/chop-compiler/workflows/milestones-cchop/badge.svg)](https://github.com/lochbrunner/chop-compiler/actions?workflow=milestones-cchop)
 
-
 # Reference implementation for chop-lang
-
 
 This is a reference implementation of [Chop Language](https://github.com/lochbrunner/chop-specs/blob/master/README.md).
 
@@ -55,7 +53,7 @@ cchop <code filename> -o <output filename>
 1. [Code generation from intermediate steps](./milestones/8)
 1. Control flow
 1. Enums
-1. Arrays and Strings 
+1. Arrays and Strings
 1. Heap
 1. Meta Programming
 1. Hooks
@@ -92,3 +90,11 @@ exporter
 ```
 
 The steps `parser`, `generator` and `specializer` are working on single statements.
+
+## Useful Tools
+
+Compile C code to LLVM:
+
+```shell
+clang -S -emit-llvm <c code file>
+```

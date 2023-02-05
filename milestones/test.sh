@@ -8,9 +8,7 @@ RED='\033[0;31m'
 
 MILESTONES_DIR=$(dirname $0)
 
-FAILED=0
-
-CASES=($(ls ./milestones/*/*.ch))
+CASES=($(ls milestones/*/*.ch))
 
 RUN_ICHOP=1
 RUN_CCHOP=1
@@ -39,12 +37,11 @@ if [ -n "$RUN_ICHOP" ]; then
         actual=$(timeout $TIMEOUT $CASE)
 
         if test "$?" -ne "0"; then
-            let "FAILED++"
             printf "${RED} crashed!$NC\n"
+            errors+=("Interpreter $CASE crashed")
         elif test "$actual" != "$expected" ;then
-            let "FAILED++"
             printf "${RED} failed!$NC\n"
-            errors+="Interpeter $CASE\n Expteced: \"$expected\" got \"$actual\""
+            errors+=("Interpreter $CASE\n Expected: \"$expected\" got \"$actual\"")
         else
             printf "${GREEN} ok$NC\n"
         fi
@@ -55,20 +52,26 @@ if [ -n "$RUN_CCHOP" ]; then
     printf "\nTesting compiler\n"
     for CASE in "${CASES[@]}"; do
         printf "test $CASE ... "
+        target_bin="build/${CASE%.*}"
+        mkdir -p `dirname $target_bin`
         expected=$(cat "${CASE%.*}".out)
-        timeout $TIMEOUT cchop $CASE -o build/main
+        timeout $TIMEOUT cchop $CASE -o $target_bin
         if test "$?" -ne "0"; then
-            let "FAILED++"
             echo -e "${RED}cchop crashed!$NC"
+            errors+=("Compiler $CASE crashed")
+            continue
         fi
-        actual=$(build/main)
+        if [ ! -f $target_bin ]; then
+            echo -e "${RED}binary missing!$NC"
+            errors+=("Compiler $CASE misses binary $target_bin")
+            continue
+        fi
+        actual=$($target_bin)
         if test "$?" -ne "0"; then
-            let "FAILED++"
             echo -e "${RED}executable crashed!$NC"
         elif test "$actual" != "$expected" ;then
-            let "FAILED++"
             printf "${RED}failed!$NC\n"
-            errors+="Compiler $CASE Expteced: \"$expected\" got \"$actual\""
+            errors+=("Compiler $CASE Expected: \"$expected\" got \"$actual\"")
         else
             printf "${GREEN}ok$NC\n"
         fi
@@ -76,12 +79,12 @@ if [ -n "$RUN_CCHOP" ]; then
 fi
 
 printf "\n"
-if test "$FAILED" -eq "0"; then
+if test "${#errors[@]}" -eq "0"; then
     echo -e "${GREEN}All milestone tests succeeded!$NC"
     exit 0
 else
-    echo -e "${RED}$FAILED milestone tests failed!$NC"
-    for error in ${errors[@]}; do
+    echo -e "${RED}${#errors[@]} milestone tests failed!$NC"
+    for error in "${errors[@]}"; do
         echo $error
     done
     exit 1

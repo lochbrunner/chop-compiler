@@ -55,7 +55,7 @@ mod e2e {
         );
         assert_ok!(actual);
         let actual = actual.unwrap();
-        let expected = vec![PushInt32(42), StdOut];
+        let expected = vec![PushInt32(42), StdOut(Type::Int32)];
         let expected = [&HEADER[..], &expected].concat();
 
         assert_eq!(actual, expected);
@@ -73,7 +73,12 @@ mod e2e {
         assert_ok!(actual);
         let actual = actual.unwrap();
 
-        let expected = vec![PushInt32(42), StdOut, PushInt32(35), StdOut];
+        let expected = vec![
+            PushInt32(42),
+            StdOut(Type::Int32),
+            PushInt32(35),
+            StdOut(Type::Int32),
+        ];
         let expected = [&HEADER[..], &expected].concat();
 
         assert_eq!(actual, expected);
@@ -93,11 +98,11 @@ mod e2e {
 
         let expected = vec![
             PushInt32(42),
-            StdOut,
+            StdOut(Type::Int32),
             PushInt32(35),
-            StdOut,
+            StdOut(Type::Int32),
             PushInt32(28),
-            StdOut,
+            StdOut(Type::Int32),
         ];
         let expected = [&HEADER[..], &expected].concat();
 
@@ -117,7 +122,7 @@ mod e2e {
             PushInt32(3),
             PushInt32(5),
             Call2("max".to_owned(), Type::Int32, Type::Int32, Type::Int32),
-            StdOut,
+            StdOut(Type::Int32),
         ];
         let expected = [&HEADER[..], &expected].concat();
 
@@ -154,7 +159,7 @@ mod e2e {
             Load(Type::Int32, 1),
             Load(Type::Int32, 2),
             Add(Type::Int32),
-            StdOut,
+            StdOut(Type::Int32),
         ];
 
         assert_eq!(actual, expected);
@@ -220,7 +225,7 @@ mod e2e {
             Load(Int8, 2),
             Load(Int8, 3),
             Call2("max".to_owned(), Int8, Int8, Int8),
-            StdOut,
+            StdOut(Int8),
         ];
 
         assert_eq!(actual, expected);

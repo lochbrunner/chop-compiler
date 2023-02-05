@@ -14,9 +14,13 @@ pub fn link(input: &str, output: &str, wd: &str, file_stem: &str) -> Result<(), 
         .args(&[&object_file, "-o", output])
         .output()
     {
-        Ok(_) => (),
-        Err(msg) => return Err(msg.to_string()),
+        Ok(_) => Ok(()),
+        Err(e) => match e.kind() {
+            std::io::ErrorKind::NotFound => Err(
+                "Can not find llc.\nYou need to install the LLVM tools.\nSee https://apt.llvm.org"
+                    .to_owned(),
+            ),
+            _ => Err(e.to_string()),
+        },
     }
-
-    Ok(())
 }

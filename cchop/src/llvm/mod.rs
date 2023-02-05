@@ -1,7 +1,10 @@
 use std::collections::HashMap;
 use std::fmt;
 
-use core::{declaration::Type, ByteCode, CompilerError};
+use core::{
+    declaration::{Signature, Type},
+    ByteCode, CompilerError,
+};
 
 mod buildins;
 
@@ -17,7 +20,9 @@ fn write_empty_line(code: &mut String) {
 }
 
 fn write_format_string(code: &mut String) {
-    code.push_str("@.str = private unnamed_addr constant [4 x i8] c\"%d\\0A\\00\", align 1\n");
+    code.push_str("@.str.i = private unnamed_addr constant [4 x i8] c\"%i\\0A\\00\", align 1\n");
+    code.push_str("@.str.g = private unnamed_addr constant [4 x i8] c\"%g\\0A\\00\", align 1\n");
+    code.push_str("@.str.u = private unnamed_addr constant [4 x i8] c\"%u\\0A\\00\", align 1\n");
 }
 
 fn write_printf_declaration(code: &mut String) {
@@ -70,20 +75,60 @@ enum StackItem {
     Ref(usize),
 }
 
+fn stack_item_to_type(item: &StackItem) -> Option<Type> {
+    match item {
+        StackItem::Float64(_) => Some(Type::Float64),
+        StackItem::Float32(_) => Some(Type::Float32),
+        StackItem::Int64(_) => Some(Type::Int64),
+        StackItem::Int32(_) => Some(Type::Int32),
+        StackItem::Int16(_) => Some(Type::Int16),
+        StackItem::Int8(_) => Some(Type::Int8),
+        StackItem::UInt64(_) => Some(Type::UInt64),
+        StackItem::UInt32(_) => Some(Type::UInt32),
+        StackItem::UInt16(_) => Some(Type::UInt16),
+        StackItem::UInt8(_) => Some(Type::UInt8),
+        StackItem::USize(_) => Some(Type::USize),
+        StackItem::Ref(_) => None,
+    }
+}
+
 fn store<T>(index: usize, value: T, v_type: &Type, code: &mut String)
 where
     T: fmt::Display,
 {
     code.push_str(&format!(
-        "  store {} {}, {}* %{}, align 4\n",
+        "  store {} {}, {}* %{}, align {}\n",
         v_type.to_llvm(),
         value,
         v_type.to_llvm(),
-        index
+        index,
+        v_type.align(),
     ));
 }
 
-fn get_last_item_rep_gen(stack: &mut Vec<StackItem>) -> Result<String, CompilerError> {
+fn asserted_pop(
+    expected_type: &Type,
+    stack: &mut Vec<StackItem>,
+) -> Result<StackItem, CompilerError> {
+    if let Some(item) = stack.pop() {
+        if let Some(actual_type) = stack_item_to_type(&item) {
+            if actual_type == *expected_type {
+                Ok(item)
+            } else {
+                Err(CompilerError::global(&format!(
+                    "Expected stack item of type {:?}, but got {:?}",
+                    expected_type, actual_type
+                )))
+            }
+        } else {
+            Ok(item)
+        }
+    } else {
+        Err(CompilerError::global("Missing argument on stack"))
+    }
+}
+
+fn get_last_item_rep_any(stack: &mut Vec<StackItem>) -> Result<String, CompilerError> {
     match stack.pop() {
         None => Err(CompilerError::global("Missing argument on stack")),
         Some(item) => match item {
@@ -97,65 +142,29 @@ fn get_last_item_rep_gen(stack: &mut Vec<StackItem>) -> Result<String, CompilerE
             StackItem::UInt32(v) => Ok(v.to_string()),
             StackItem::UInt64(v) => Ok(v.to_string()),
             StackItem::USize(v) => Ok(v.to_string()),
-            StackItem::Float32(v) => Ok(v.to_string()),
-            StackItem::Float64(v) => Ok(v.to_string()),
+            StackItem::Float32(v) => Ok(format!("{:.6e}", v)),
+            StackItem::Float64(v) => Ok(format!("{:.6e}", v)),
         },
     }
 }
 
-fn get_last_item_rep_i8(stack: &mut Vec<StackItem>) -> Result<String, CompilerError> {
-    match stack.pop() {
-        None => Err(CompilerError::global("Missing argument on stack")),
-        Some(item) => match item {
-            StackItem::Int8(v) => Ok(v.to_string()),
-            StackItem::Ref(r) => Ok(format!("%{}", r)),
-            _ => Err(CompilerError::global(&format!(
-                "Expected stack item of type i8, but got {:?}",
-                item
-            ))),
-        },
-    }
-}
-
-fn get_last_item_rep_i16(stack: &mut Vec<StackItem>) -> Result<String, CompilerError> {
-    match stack.pop() {
-        None => Err(CompilerError::global("Missing argument on stack")),
-        Some(item) => match item {
-            StackItem::Int16(v) => Ok(v.to_string()),
-            StackItem::Ref(r) => Ok(format!("%{}", r)),
-            _ => Err(CompilerError::global(&format!(
-                "Expected stack item of type i16, but got {:?}",
-                item
-            ))),
-        },
-    }
-}
-
-fn get_last_item_rep_i32(stack: &mut Vec<StackItem>) -> Result<String, CompilerError> {
-    match stack.pop() {
-        None => Err(CompilerError::global("Missing argument on stack")),
-        Some(item) => match item {
-            StackItem::Int32(v) => Ok(v.to_string()),
-            StackItem::Ref(r) => Ok(format!("%{}", r)),
-            _ => Err(CompilerError::global(&format!(
-                "Expected stack item of type i32, but got {:?}",
-                item
-            ))),
-        },
-    }
-}
-
-fn get_last_item_rep_i64(stack: &mut Vec<StackItem>) -> Result<String, CompilerError> {
-    match stack.pop() {
-        None => Err(CompilerError::global("Missing argument on stack")),
-        Some(item) => match item {
-            StackItem::Int64(v) => Ok(v.to_string()),
-            StackItem::Ref(r) => Ok(format!("%{}", r)),
-            _ => Err(CompilerError::global(&format!(
-                "Expected stack item of type i64, but got {:?}",
-                item
-            ))),
-        },
+fn get_last_item_rep_checked(
+    expected_type: &Type,
+    stack: &mut Vec<StackItem>,
+) -> Result<String, CompilerError> {
+    match asserted_pop(expected_type, stack)? {
+        StackItem::Ref(r) => Ok(format!("%{}", r)),
+        StackItem::Int8(v) => Ok(v.to_string()),
+        StackItem::Int16(v) => Ok(v.to_string()),
+        StackItem::Int32(v) => Ok(v.to_string()),
+        StackItem::Int64(v) => Ok(v.to_string()),
+        StackItem::UInt8(v) => Ok(v.to_string()),
+        StackItem::UInt16(v) => Ok(v.to_string()),
+        StackItem::UInt32(v) => Ok(v.to_string()),
+        StackItem::UInt64(v) => Ok(v.to_string()),
+        StackItem::USize(v) => Ok(v.to_string()),
+        StackItem::Float32(v) => Ok(format!("{:.6e}", v)),
+        StackItem::Float64(v) => Ok(format!("{:.6e}", v)),
     }
 }
 
@@ -163,16 +172,28 @@ fn call_stdout(
     register_counter: &mut usize,
     stack: &mut Vec<StackItem>,
     code: &mut String,
+    arg_type: &Type,
 ) -> Result<(), CompilerError> {
-    let arg = get_last_item_rep_i32(stack)?;
+    let arg = get_last_item_rep_checked(arg_type, stack)?;
     *register_counter += 1;
-    code.push_str(&format!("  %{} = call i32 (i8*, ...) @printf(i8* getelementptr inbounds ([4 x i8], [4 x i8]* @.str, i32 0, i32 0), i32 {})\n", 
-                                    register_counter, arg));
+    let (template, dtype) = match arg_type {
+        Type::Float32 => ("@.str.g", "double"),
+        Type::Float64 => ("@.str.g", "double"),
+        Type::Int8 => ("@.str.i", "i8"),
+        Type::Int16 => ("@.str.i", "i16"),
+        Type::Int32 => ("@.str.i", "i32"),
+        Type::UInt8 => ("@.str.u", "i8"),
+        Type::UInt16 => ("@.str.u", "i16"),
+        Type::UInt32 => ("@.str.u", "i32"),
+        _ => return Err(CompilerError::global(&format!("Missing argument on stack"))),
+    };
+    code.push_str(&format!("  %{} = call i32 (i8*, ...) @printf(i8* noundef getelementptr inbounds ([4 x i8], [4 x i8]* {}, i32 0, i32 0), {} noundef {})\n", register_counter, template, dtype, arg));
     Ok(())
 }
 
 trait ToLLVM {
     fn to_llvm(&self) -> &'static str;
+    fn align(&self) -> u8;
 }
 
 impl ToLLVM for Type {
@@ -182,17 +203,44 @@ impl ToLLVM for Type {
             Type::Int16 => "i16",
             Type::Int32 => "i32",
             Type::Int64 => "i64",
-            Type::UInt8 => "u8",
-            Type::UInt16 => "u16",
-            Type::UInt32 => "u32",
-            Type::UInt64 => "u64",
+            // LLVM does not distinguish between signed and unsigned.
+            Type::UInt8 => "i8",
+            Type::UInt16 => "i16",
+            Type::UInt32 => "i32",
+            Type::UInt64 => "i64",
             Type::USize => "usize",
-            Type::Float32 => "f32",
-            Type::Float64 => "f64",
+            Type::Float32 => "float",
+            Type::Float64 => "double",
             Type::Void => "void",
             Type::Type => panic!("Type can not be used as an variable"),
         }
     }
+    fn align(&self) -> u8 {
+        match self {
+            Type::Int8 | Type::UInt8 => 1,
+            Type::Int16 | Type::UInt16 => 2,
+            Type::Int32 | Type::UInt32 => 4,
+            Type::Float32 => 4,
+            Type::USize => 4,
+            Type::Int64 | Type::UInt64 => 8,
+            Type::Float64 => 8,
+            _ => panic!("Type can not be used as an variable"),
+        }
+    }
+}
+
+fn mangle(ident: &str, signature: &Signature<Type>) -> String {
+    let args = signature
+        .args
+        .iter()
+        .map(|t| t.to_llvm())
+        .collect::<Vec<_>>();
+    format!(
+        "{}_{}__{}",
+        ident,
+        signature.return_type.to_llvm(),
+        args.join("_")
+    )
 }
 
 fn call_function_2_gen(
@@ -204,8 +252,15 @@ fn call_function_2_gen(
     stack: &mut Vec<StackItem>,
     code: &mut String,
 ) -> Result<(), CompilerError> {
-    let b = get_last_item_rep_gen(stack)?;
-    let a = get_last_item_rep_gen(stack)?;
+    let b = get_last_item_rep_checked(b_type, stack)?;
+    let a = get_last_item_rep_checked(a_type, stack)?;
+    let function_name = mangle(
+        function_name,
+        &Signature {
+            return_type: return_type.clone(),
+            args: vec![a_type.clone(), b_type.clone()],
+        },
+    );
     *register_counter += 1;
     code.push_str(&format!(
         "  %{} = call {} @{}({} {}, {} {})\n",
@@ -229,10 +284,10 @@ fn operator(
     code: &mut String,
 ) -> Result<(), CompilerError> {
     *register_counter += 1;
-    let b = get_last_item_rep_gen(stack)?;
-    let a = get_last_item_rep_gen(stack)?;
+    let b = get_last_item_rep_any(stack)?;
+    let a = get_last_item_rep_any(stack)?;
     code.push_str(&format!(
-        "  %{} = {} nsw {} {}, {}\n",
+        "  %{} = {} {} {}, {}\n",
         register_counter,
         operator_name,
         op_type.to_llvm(),
@@ -243,6 +298,7 @@ fn operator(
     Ok(())
 }
 
+/// See https://llvm.org/docs/LangRef.html#conversion-operations
 fn cast(
     from: &Type,
     to: &Type,
@@ -251,10 +307,16 @@ fn cast(
     code: &mut String,
 ) -> Result<(), CompilerError> {
     *register_counter += 1;
-    let value = get_last_item_rep_gen(stack)?;
+    let value = get_last_item_rep_checked(from, stack)?;
+    let op_code = match (from, to) {
+        (_, Type::Float32 | Type::Float64) => "fpext",
+        (Type::Int32 | Type::UInt32, Type::Int8 | Type::UInt8) => "trunc",
+        _ => "sext",
+    };
     code.push_str(&format!(
-        "  %{} = sext {} {} to {}\n",
+        "  %{} = {} {} {} to {}\n",
         register_counter,
+        op_code,
         from.to_llvm(),
         value,
         to.to_llvm(),
@@ -269,8 +331,7 @@ pub fn export(instructions: &[ByteCode], source_filename: &str) -> Result<String
     write_header(source_filename, &mut code);
     write_empty_line(&mut code);
     write_format_string(&mut code);
-    buildins::write_min_function(&mut code);
-    buildins::write_max_function(&mut code);
+    buildins::write_functions(&mut code);
     write_empty_line(&mut code);
     // The main function
     code.push_str("; Function Attrs: noinline nounwind optnone uwtable\n");
@@ -282,9 +343,10 @@ pub fn export(instructions: &[ByteCode], source_filename: &str) -> Result<String
         if let ByteCode::Alloca(dtype) = instruction {
             register_counter += 1;
             code.push_str(&format!(
-                "  %{} = alloca {}, align 4\n",
+                "  %{} = alloca {}, align {}\n",
                 register_counter,
-                dtype.to_llvm()
+                dtype.to_llvm(),
+                dtype.align()
             ));
         }
     }
@@ -292,7 +354,9 @@ pub fn export(instructions: &[ByteCode], source_filename: &str) -> Result<String
     let mut stack: Vec<StackItem> = Vec::new();
     for instruction in instructions.iter() {
         match instruction {
-            ByteCode::StdOut => call_stdout(&mut register_counter, &mut stack, &mut code)?,
+            ByteCode::StdOut(arg_type) => {
+                call_stdout(&mut register_counter, &mut stack, &mut code, arg_type)?
+            }
             ByteCode::PushInt8(v) => stack.push(StackItem::Int8(*v)),
             ByteCode::PushInt16(v) => stack.push(StackItem::Int16(*v)),
             ByteCode::PushInt32(v) => stack.push(StackItem::Int32(*v)),
@@ -316,19 +380,7 @@ pub fn export(instructions: &[ByteCode], source_filename: &str) -> Result<String
                 )?;
             }
             ByteCode::Store(op_type, index) => {
-                // let a = get_last_item_rep_i32(&mut stack)?;
-                let a = match op_type {
-                    Type::Int8 => get_last_item_rep_i8(&mut stack)?,
-                    Type::Int16 => get_last_item_rep_i16(&mut stack)?,
-                    Type::Int32 => get_last_item_rep_i32(&mut stack)?,
-                    Type::Int64 => get_last_item_rep_i64(&mut stack)?,
-                    _ => {
-                        return Err(CompilerError::global(&format!(
-                            "Can not store symbol of type {:?}",
-                            op_type
-                        )));
-                    }
-                };
+                let a = get_last_item_rep_checked(op_type, &mut stack)?;
                 store(*index + 1, a, op_type, &mut code);
             }
             ByteCode::Alloca(_) => (),
@@ -343,13 +395,43 @@ pub fn export(instructions: &[ByteCode], source_filename: &str) -> Result<String
                 stack.push(StackItem::Ref(register_counter));
             }
             ByteCode::Add(op_type) => {
-                operator("add", op_type, &mut register_counter, &mut stack, &mut code)?
+                let op_code = match op_type {
+                    Type::Float32 | Type::Float64 => "fadd",
+                    _ => "add",
+                };
+                operator(
+                    op_code,
+                    op_type,
+                    &mut register_counter,
+                    &mut stack,
+                    &mut code,
+                )?
             }
             ByteCode::Sub(op_type) => {
-                operator("sub", op_type, &mut register_counter, &mut stack, &mut code)?
+                let op_code = match op_type {
+                    Type::Float32 | Type::Float64 => "fsub",
+                    _ => "sub",
+                };
+                operator(
+                    op_code,
+                    op_type,
+                    &mut register_counter,
+                    &mut stack,
+                    &mut code,
+                )?
             }
             ByteCode::Mul(op_type) => {
-                operator("mul", op_type, &mut register_counter, &mut stack, &mut code)?
+                let op_code = match op_type {
+                    Type::Float32 | Type::Float64 => "fmul",
+                    _ => "mul",
+                };
+                operator(
+                    op_code,
+                    op_type,
+                    &mut register_counter,
+                    &mut stack,
+                    &mut code,
+                )?
             }
             ByteCode::Div(op_type) => operator(
                 "sdiv",

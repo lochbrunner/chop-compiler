@@ -5,7 +5,7 @@ use std::collections::HashMap;
 
 #[derive(PartialEq, Debug, Clone)]
 pub enum ByteCode {
-    StdOut, // For now hard-coded
+    StdOut(Type), // For now hard-coded
     // ident, return type, arg1, arg2
     Call2(String, Type, Type, Type),
     PushInt8(i8),
@@ -30,9 +30,15 @@ pub enum ByteCode {
     Load(Type, usize),
 }
 
-fn get_build_ins(ident: &str) -> Option<ByteCode> {
+fn get_build_ins(ident: &str, signature: &Signature<Type>) -> Option<ByteCode> {
     match ident {
-        "stdout" => Some(ByteCode::StdOut),
+        "stdout" => {
+            if signature.args.len() != 1 || signature.return_type != Type::Void {
+                None
+            } else {
+                Some(ByteCode::StdOut(signature.args[0].clone()))
+            }
+        }
         _ => None,
     }
 }
@@ -194,7 +200,7 @@ fn unroll_node<'a>(
             } else {
                 let Signature { return_type, args } = signature.clone();
                 // Get build-in functions
-                match get_build_ins(&ident) {
+                match get_build_ins(&ident, &signature) {
                     Some(instruction) => bytecode.push(instruction),
                     None => {
                         if arg_types.len() != 2 {
@@ -301,7 +307,7 @@ mod specs {
         let actual = compile(&context, input);
         assert_ok!(actual);
         let actual = actual.unwrap();
-        let expected = vec![PushInt32(42), StdOut];
+        let expected = vec![PushInt32(42), StdOut(Type::Int32)];
         let expected = [&HEADER[..], &expected].concat();
 
         assert_eq!(actual, expected);
@@ -339,7 +345,7 @@ mod specs {
             PushInt32(3),
             PushInt32(5),
             ByteCode::Add(Type::Int32),
-            StdOut,
+            StdOut(Type::Int32),
         ];
         let expected = [&HEADER[..], &expected].concat();
 
@@ -423,7 +429,7 @@ mod specs {
             Load(Type::Int32, 2),
             Load(Type::Int32, 3),
             Call2("max".to_string(), Type::Int32, Type::Int32, Type::Int32),
-            StdOut,
+            StdOut(Type::Int32),
         ];
         let expected = [&HEADER[..], &expected].concat();
         assert_eq!(actual, expected);
@@ -539,7 +545,7 @@ mod specs {
             Load(Type::Int8, 2),
             Load(Type::Int8, 3),
             Call2("max".to_string(), Type::Int8, Type::Int8, Type::Int8),
-            StdOut,
+            StdOut(Type::Int8),
         ];
 
         assert_eq!(actual, expected);

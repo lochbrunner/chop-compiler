@@ -455,7 +455,7 @@ pub fn evaluate(code: &[ByteCode], writer: &mut dyn Write) -> Result<(), String>
     for instruction in code.iter() {
         match instruction {
             // Build ins
-            ByteCode::StdOut => {
+            ByteCode::StdOut(_) => {
                 let v = pop_generic(&mut stack)?;
                 let s = match v {
                     StackItem::Int8(v) => v.to_string(),
@@ -527,7 +527,7 @@ mod specs {
     use ByteCode::*;
     #[test]
     fn milestone_1() {
-        let bytecode = vec![PushInt32(42), StdOut];
+        let bytecode = vec![PushInt32(42), StdOut(Type::Int32)];
         let mut stdout = Cursor::new(vec![]);
         let result = evaluate(&bytecode, &mut stdout);
         assert_ok!(result);
@@ -537,11 +537,11 @@ mod specs {
     fn milestone_1_advanced() {
         let bytecode = vec![
             PushInt32(42),
-            StdOut,
+            StdOut(Type::Int32),
             PushInt32(35),
-            StdOut,
+            StdOut(Type::Int32),
             PushInt32(28),
-            StdOut,
+            StdOut(Type::Int32),
         ];
 
         let mut stdout = Cursor::new(vec![]);
@@ -552,7 +552,12 @@ mod specs {
 
     #[test]
     fn operator_simple() {
-        let bytecode = vec![PushInt32(3), PushInt32(5), Add(Type::Int32), StdOut];
+        let bytecode = vec![
+            PushInt32(3),
+            PushInt32(5),
+            Add(Type::Int32),
+            StdOut(Type::Int32),
+        ];
 
         let mut stdout = Cursor::new(vec![]);
         let result = evaluate(&bytecode, &mut stdout);
@@ -583,7 +588,7 @@ mod specs {
             Load(Type::Int8, 2),
             Load(Type::Int8, 3),
             Call2("max".to_string(), Type::Int8, Type::Int8, Type::Int8),
-            StdOut,
+            StdOut(Type::Int8),
         ];
 
         let mut stdout = Cursor::new(vec![]);
