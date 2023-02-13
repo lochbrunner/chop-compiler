@@ -37,7 +37,7 @@ if [ -n "$RUN_ICHOP" ]; then
         actual=$(timeout $TIMEOUT $CASE)
 
         if test "$?" -ne "0"; then
-            printf "${RED} crashed!$NC\n"
+            printf "${RED}ichop crashed!$NC\n"
             errors+=("Interpreter $CASE crashed")
         elif test "$actual" != "$expected" ;then
             printf "${RED} failed!$NC\n"

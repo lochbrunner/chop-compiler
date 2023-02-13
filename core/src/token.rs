@@ -76,6 +76,19 @@ pub struct Token {
     // pub filename: &str,
 }
 
+impl Token {
+    pub fn is_operator(&self) -> bool {
+        match self.token {
+            TokenPayload::Multiply
+            | TokenPayload::Divide
+            | TokenPayload::Add
+            | TokenPayload::Subtract
+            | TokenPayload::Remainder => true,
+            _ => false,
+        }
+    }
+}
+
 #[cfg(test)]
 impl Token {
     pub fn stub(token: TokenPayload) -> Token {

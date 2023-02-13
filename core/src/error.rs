@@ -1,3 +1,5 @@
+use std::cmp::Ordering;
+
 #[derive(Debug, PartialEq)]
 pub struct CompilerError {
     pub location: Location,
@@ -27,6 +29,16 @@ pub struct Location {
     pub line: u32,
     pub begin: usize,
     pub end: usize,
+}
+
+impl PartialOrd for Location {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        if self.line != other.line {
+            self.line.partial_cmp(&other.line)
+        } else {
+            self.begin.partial_cmp(&other.begin)
+        }
+    }
 }
 
 impl Location {

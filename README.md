@@ -47,7 +47,7 @@ cchop <code filename> -o <output filename>
 1. [Compile MVP via LLVM](./milestones/2) :heavy_check_mark:
 1. [Mathematical operations and build-in functions](./milestones/3) :heavy_check_mark:
 1. [Variables](./milestones/4) :heavy_check_mark:
-1. [Primitive Types](./milestones/5)
+1. [Primitive Types](./milestones/5) :heavy_check_mark:
 1. [Objects](./milestones/6)
 1. [Functions](./milestones/7)
 1. [Code generation from intermediate steps](./milestones/8)
@@ -78,7 +78,7 @@ Finally solve some of [Graydon Hoare's problems](https://graydon2.dreamwidth.org
 
 ## Architecture
 
-```
+```text
 lexer
   parser
   generator (deprecated)

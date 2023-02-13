@@ -1,14 +1,15 @@
 use crate::ast;
 use crate::ast::{AstTokenPayload, SparseToken};
 use crate::declaration::{Context, Declaration, Type};
-use crate::error::{CompilerError, ToCompilerError};
+use crate::error::{CompilerError, Location, ToCompilerError};
 use crate::token::{Token, TokenPayload};
+use std::env;
 use std::rc::Rc;
 
 #[derive(PartialEq, PartialOrd, Debug, Clone)]
 pub enum Precedence {
-    PCall,
     POpening,
+    PCall,
     Pipe,
     PSum,
     PProduct,
@@ -21,7 +22,8 @@ struct Infix {
     precedence: Precedence,
     /// How to handle local declarations with 2 or 3 args?
     req_args_count: usize,
-    optional_type: bool,
+    optional_type: bool, // ?
+    // If it returns void.
     is_statement: bool,
 }
 
@@ -37,6 +39,13 @@ impl Symbol {
             token.token == TokenPayload::TypeDeclaration
         } else {
             false
+        }
+    }
+
+    pub fn location(&self) -> &Location {
+        match self {
+            Self::Raw(token) => &token.loc,
+            Self::Finished(node) => &node.root.loc,
         }
     }
 }
@@ -91,6 +100,9 @@ impl ParseStack {
     /// For instance a := b+c
     pub fn is_completable(&self) -> bool {
         if self.infix.is_empty() {
+            return false;
+        }
+        if self.infix.last().unwrap().token.token == TokenPayload::ParenthesesL {
             return false;
         }
         let needed_symbols = self.infix.iter().fold(0, |acc, op| acc + op.req_args_count);
@@ -168,6 +180,23 @@ where
     }
 
     Ok(())
+}
+
+fn is_astifyable(stack: &ParseStack) -> bool {
+    if let Some(op) = stack.infix.last() {
+        if op.token.is_operator() {
+            stack.symbol.len() >= op.req_args_count
+        } else {
+            stack
+                .symbol
+                .iter()
+                .filter(|t| t.location() > &op.token.loc)
+                .count()
+                >= op.req_args_count
+        }
+    } else {
+        false
+    }
 }
 
 fn create_statement<'a>(
@@ -289,7 +318,7 @@ impl ParserState {
 /// Returns a single statement using the state as for generator-like behavior.
 /// Turns a slice of tokens into an statement.
 /// Using [Shunting-yard algorithm](https://en.wikipedia.org/wiki/Shunting-yard_algorithm#/media/File:Shunting_yard.svg)
-pub fn parse(
+fn parse_impl(
     state: ParserState,
     context: &mut Context,
     tokens: &[Token],
@@ -316,18 +345,20 @@ pub fn parse(
                 optional_type: false,
             }),
             TokenPayload::Delimiter => {
-                if let Err(msg) = astify(context, Precedence::POpening, &mut stack) {
-                    return Err(CompilerError::from_token::<Token>(
-                        token,
-                        format!("Error on astify: {}", msg),
-                    ));
+                if is_astifyable(&stack) {
+                    if let Err(msg) = astify(context, Precedence::POpening, &mut stack) {
+                        return Err(CompilerError::from_token::<Token>(
+                            token,
+                            format!("[P3] Error on astify: {}", msg),
+                        ));
+                    }
                 }
             }
             TokenPayload::ParenthesesR => {
                 if let Err(msg) = astify(context, Precedence::POpening, &mut stack) {
                     return Err(CompilerError::from_token::<Token>(
                         token,
-                        format!("Error on astify: {}", msg),
+                        format!("[P4] Error on astify: {}", msg),
                     ));
                 }
                 stack.infix.pop();
@@ -502,6 +533,28 @@ pub fn parse(
     )))
 }
 
+pub fn parse(
+    state: ParserState,
+    context: &mut Context,
+    tokens: &[Token],
+) -> Result<Option<(ast::Node<SparseToken>, ParserState)>, CompilerError> {
+    match env::var("DEBUG_SHOW_IR") {
+        Ok(_) => parse_impl(state, context, tokens).map_err(|e| CompilerError {
+            location: e.location,
+            msg: format!(
+                "{}\n Input: {}",
+                e.msg,
+                tokens
+                    .iter()
+                    .map(|t| format!("{:?}", t.token))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+        }),
+        Err(_) => parse_impl(state, context, tokens),
+    }
+}
+
 #[cfg(test)]
 mod specs {
     use super::*;
@@ -641,7 +694,7 @@ mod specs {
         tokens: &[TokenPayload],
         is_final: bool,
     ) -> (SparseNode, ParserState) {
-        let statement = parse(state, context, &create_stub(tokens));
+        let statement = parse_impl(state, context, &create_stub(tokens));
         assert_ok!(statement);
         let statement = statement.unwrap();
         assert!(statement.is_some());
@@ -935,6 +988,44 @@ mod specs {
                                 ],
                             },
                             Node::leaf(IntegerStub::stub(15)),
+                        ],
+                    },
+                ],
+            }],
+        };
+
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn milestone_3_hard() {
+        // stdout min 0 , max -3,-4
+        let tokens = vec![
+            Ident("stdout".to_owned()),
+            Ident("min".to_owned()),
+            Integer(0),
+            Delimiter,
+            Ident("max".to_owned()),
+            Integer(-3),
+            Delimiter,
+            Integer(-4),
+        ];
+
+        let mut context = Context::default();
+
+        let (actual, _) = check_statement(ParserState::new(), &mut context, &tokens, true);
+
+        let expected: Node<SparseToken> = Node {
+            root: StringStub::stub("stdout"),
+            args: vec![Node {
+                root: StringStub::stub("min"),
+                args: vec![
+                    Node::leaf(IntegerStub::stub(0)),
+                    Node {
+                        root: StringStub::stub("max"),
+                        args: vec![
+                            Node::leaf(IntegerStub::stub(-3)),
+                            Node::leaf(IntegerStub::stub(-4)),
                         ],
                     },
                 ],
@@ -1411,5 +1502,74 @@ mod specs {
         };
 
         assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn is_completable_5_hard() {
+        // stdout (
+        use Precedence::*;
+        use Symbol::Raw;
+        use TokenPayload::*;
+        let stack = ParseStack {
+            symbol: vec![Raw(Token::stub(Ident("stdout".to_owned())))],
+            infix: vec![Infix {
+                token: Token::stub(ParenthesesL),
+                precedence: POpening,
+                req_args_count: 0,
+                optional_type: false,
+                is_statement: false,
+            }],
+        };
+        assert!(!stack.is_completable());
+    }
+
+    #[test]
+    fn parse_milestone_5_hard() {
+        // stdout (max (max 1,2),3) + 1
+        let tokens = [
+            Ident("stdout".to_owned()),
+            ParenthesesL,
+            Ident("max".to_owned()),
+            ParenthesesL,
+            Ident("max".to_owned()),
+            Integer(1),
+            Delimiter,
+            Integer(2),
+            ParenthesesR,
+            Delimiter,
+            Integer(3),
+            ParenthesesR,
+            Add,
+            Integer(1),
+        ];
+
+        let mut context = Context::default();
+
+        let (statement, _) = check_statement(ParserState::new(), &mut context, &tokens, true);
+
+        let expected: Node<SparseToken> = Node {
+            root: StringStub::stub("stdout"),
+            args: vec![Node {
+                root: LexerTokenPayloadStub::stub(Add),
+                args: vec![
+                    Node {
+                        root: StringStub::stub("max"),
+                        args: vec![
+                            Node {
+                                root: StringStub::stub("max"),
+                                args: vec![
+                                    Node::leaf(IntegerStub::stub(1)),
+                                    Node::leaf(IntegerStub::stub(2)),
+                                ],
+                            },
+                            Node::leaf(IntegerStub::stub(3)),
+                        ],
+                    },
+                    Node::leaf(IntegerStub::stub(1)),
+                ],
+            }],
+        };
+
+        assert_eq!(statement, expected);
     }
 }
