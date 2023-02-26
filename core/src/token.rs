@@ -11,8 +11,8 @@ pub enum TokenPayload {
     // TODO: more literals
 
     // Statements
-    DefineLocal, // :=
-    // DefinePublic, // :+
+    DefineLocal,  // :=
+    DefinePublic, // :+
     // Declare,      // :
     Cast, // as
     // Operators
@@ -27,12 +27,12 @@ pub enum TokenPayload {
     Remainder, // %
     // Punctuation
     Delimiter, // ,
-    // Dot,
+    Dot,
     ParenthesesL,
     ParenthesesR,
     TypeDeclaration, //
-                     // BraceL,
-                     // BraceR,
+    BraceL,
+    BraceR,
 }
 
 impl fmt::Display for TokenPayload {
@@ -43,6 +43,7 @@ impl fmt::Display for TokenPayload {
             Integer(value) => format!("{}", value),
             Float(value) => format!("{}", value),
             DefineLocal => ":=".to_owned(),
+            DefinePublic => ":+".to_owned(),
             Cast => "as".to_owned(),
             Pipe => "|".to_owned(),
             Multiply => "*".to_owned(),
@@ -51,8 +52,11 @@ impl fmt::Display for TokenPayload {
             Subtract => "-".to_owned(),
             Remainder => "%".to_owned(),
             Delimiter => ", ".to_owned(),
+            Dot => ".".to_owned(),
             ParenthesesL => "(".to_owned(),
             ParenthesesR => ")".to_owned(),
+            BraceL => "{".to_owned(),
+            BraceR => "}".to_owned(),
             TypeDeclaration => ": ".to_owned(),
         };
         write!(f, "{:?}", string)

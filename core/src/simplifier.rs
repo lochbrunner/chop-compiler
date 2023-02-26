@@ -1,5 +1,5 @@
 use crate::ast::IntegerProvider;
-use crate::ast::{Ast, AstTokenPayload, DenseAst, DenseToken};
+use crate::ast::{AstTokenPayload, DenseToken, Scope};
 use crate::CompilerError;
 
 type Node = crate::ast::Node<DenseToken>;
@@ -107,14 +107,8 @@ fn simplify_node(node: Node) -> Result<Node, CompilerError> {
 }
 
 /// Simplifies constant expressions like 3+5
-pub fn simplify(ast: DenseAst) -> Result<DenseAst, CompilerError> {
-    Ok(Ast {
-        statements: ast
-            .statements
-            .into_iter()
-            .map(simplify_node)
-            .collect::<Result<Vec<_>, CompilerError>>()?,
-    })
+pub fn simplify(scope: Scope<DenseToken>) -> Result<Scope<DenseToken>, CompilerError> {
+    scope.map_into_statements(&simplify_node)
 }
 
 #[cfg(test)]
@@ -132,7 +126,7 @@ mod specs {
 
     #[test]
     fn flat_operator() {
-        let input = Ast {
+        let input = Scope {
             statements: vec![Node {
                 root: DenseToken::stub(AstTokenPayload::Symbol("stdout".to_string())),
                 args: vec![Node {
@@ -158,6 +152,7 @@ mod specs {
                     ],
                 }],
             }],
+            scopes: Default::default(),
         };
 
         let actual = simplify(input);
@@ -165,7 +160,7 @@ mod specs {
 
         let actual = actual.unwrap();
 
-        let expected = Ast {
+        let expected = Scope {
             statements: vec![Node {
                 root: DenseToken::stub(AstTokenPayload::Symbol("stdout".to_string())),
                 args: vec![Node {
@@ -173,6 +168,7 @@ mod specs {
                     args: vec![],
                 }],
             }],
+            scopes: Default::default(),
         };
 
         assert_eq!(actual, expected);

@@ -82,9 +82,10 @@ pub enum AstTokenPayload {
     Integer(IntegerProvider),
     Float(FloatProvider),
     // Statements
-    DefineLocal(Option<Type>), // :=
-    // DefinePublic, // :+
+    DefineLocal(Option<Type>),  // :=
+    DefinePublic(Option<Type>), // :+
     // Declare,      // :
+    Scope,
     Cast, // as
     // Operators
     Pipe, // |
@@ -155,6 +156,65 @@ impl fmt::Debug for SparseToken {
 impl PartialEq for SparseToken {
     fn eq(&self, other: &Self) -> bool {
         self.payload == other.payload
+    }
+}
+
+#[derive(Debug, Default, PartialEq)]
+pub struct Scope<T> {
+    pub statements: Vec<Node<T>>, // TODO: add visibility
+    // pub declarations: Vec<()>,    // TODO: add visibility
+    pub scopes: Vec<Scope<T>>, // TODO: add visibility
+}
+
+impl<T> Scope<T> {
+    pub fn map_statements<R, E>(
+        &self,
+        mapper: &dyn Fn(&Node<T>) -> Result<Node<R>, E>,
+    ) -> Result<Scope<R>, E> {
+        let statements = self
+            .statements
+            .iter()
+            .map(mapper)
+            .collect::<Result<Vec<_>, _>>()?;
+        let scopes = self
+            .scopes
+            .iter()
+            .map(|s| s.map_statements(mapper))
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(Scope { statements, scopes })
+    }
+    pub fn map_into_statements<R, E>(
+        self,
+        mapper: &dyn Fn(Node<T>) -> Result<Node<R>, E>,
+    ) -> Result<Scope<R>, E> {
+        let statements = self
+            .statements
+            .into_iter()
+            .map(mapper)
+            .collect::<Result<Vec<_>, _>>()?;
+        let scopes = self
+            .scopes
+            .into_iter()
+            .map(|s| s.map_into_statements(mapper))
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(Scope { statements, scopes })
+    }
+
+    pub fn map_into_statements_mut<R, E>(
+        self,
+        mapper: &mut dyn FnMut(Node<T>) -> Result<Node<R>, E>,
+    ) -> Result<Scope<R>, E> {
+        let statements = self
+            .statements
+            .into_iter()
+            .map(|node| mapper(node))
+            .collect::<Result<Vec<_>, _>>()?;
+        let scopes = self
+            .scopes
+            .into_iter()
+            .map(|s| s.map_into_statements_mut(mapper))
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(Scope { statements, scopes })
     }
 }
 
@@ -316,15 +376,6 @@ impl<T> Ast<T> {
 }
 
 pub type SparseAst = Ast<SparseToken>;
-pub type DenseAst = Ast<DenseToken>;
-
-impl DenseAst {
-    pub fn new() -> Self {
-        Self {
-            statements: Vec::new(),
-        }
-    }
-}
 
 #[cfg(test)]
 pub type DebugNode = Node<AstTokenPayload>;

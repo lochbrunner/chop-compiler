@@ -1,4 +1,4 @@
-use crate::ast::{AstTokenPayload, DenseAst, DenseToken, Node};
+use crate::ast::{AstTokenPayload, DenseToken, Node, Scope};
 use crate::declaration::{Context, Signature, Type};
 use crate::error::{CompilerError, Location};
 use std::collections::HashMap;
@@ -261,10 +261,12 @@ fn unroll_node<'a>(
             location: node.root.loc.clone(),
             msg: format!("[9]: Exporter Error: Unknown token {:?}", node.root.payload),
         }),
+        AstTokenPayload::Scope => unimplemented!(),
+        AstTokenPayload::DefinePublic(_) => unimplemented!(),
     }
 }
 
-pub fn compile(context: &Context, ast: DenseAst) -> Result<Vec<ByteCode>, CompilerError> {
+pub fn compile(context: &Context, ast: Scope<DenseToken>) -> Result<Vec<ByteCode>, CompilerError> {
     let mut bytecode = vec![];
     let mut register_map: HashMap<&str, usize> = hashmap! {"__init__"=> 1};
     bytecode.push(ByteCode::Alloca(Type::Int32));
@@ -279,7 +281,7 @@ pub fn compile(context: &Context, ast: DenseAst) -> Result<Vec<ByteCode>, Compil
 #[cfg(test)]
 mod specs {
     use super::*;
-    use crate::ast::{DenseAst, DenseToken, LexerTokenPayloadStub, Node};
+    use crate::ast::{DenseToken, LexerTokenPayloadStub, Node, Scope};
     use crate::declaration::Declaration;
     use crate::token::TokenPayload;
     use ByteCode::*;
@@ -289,7 +291,7 @@ mod specs {
 
     #[test]
     fn milestone_1() {
-        let input = DenseAst {
+        let input = Scope {
             statements: vec![Node {
                 root: DenseToken::stub(TokenPayload::Ident("stdout".to_owned())),
                 args: vec![Node::leaf(DenseToken::stub_typed(
@@ -297,6 +299,7 @@ mod specs {
                     Type::Int32,
                 ))],
             }],
+            scopes: Default::default(),
         };
 
         let context = Context {
@@ -315,7 +318,7 @@ mod specs {
 
     #[test]
     fn operator_simple() {
-        let input = DenseAst {
+        let input = Scope {
             statements: vec![Node {
                 root: DenseToken::stub(TokenPayload::Ident("stdout".to_owned())),
                 args: vec![Node {
@@ -332,6 +335,7 @@ mod specs {
                     ],
                 }],
             }],
+            scopes: Default::default(),
         };
         let context = Context {
             declarations: hashmap! {
@@ -358,7 +362,7 @@ mod specs {
         // b := a + 5
         // c := 7
         // stdout max(b,c)
-        let input = DenseAst {
+        let input = Scope {
             statements: vec![
                 Node {
                     root: DenseToken::stub(DefineLocal),
@@ -398,6 +402,7 @@ mod specs {
                     }],
                 },
             ],
+            scopes: Default::default(),
         };
 
         let context = Context {
@@ -437,7 +442,7 @@ mod specs {
 
     #[test]
     fn milestone_5_explicit_cast() {
-        let input = DenseAst {
+        let input = Scope {
             statements: vec![
                 Node {
                     root: DenseToken {
@@ -507,6 +512,7 @@ mod specs {
                     }],
                 },
             ],
+            scopes: Default::default(),
         };
 
         let context = Context {
@@ -553,7 +559,7 @@ mod specs {
 
     #[test]
     fn milestone_5_main() {
-        let input = DenseAst {
+        let input = Scope {
             statements: vec![
                 Node {
                     root: DenseToken::stub(DefineLocal),
@@ -602,6 +608,7 @@ mod specs {
                     }],
                 },
             ],
+            scopes: Default::default(),
         };
 
         let context = Context {

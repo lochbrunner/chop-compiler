@@ -1,4 +1,4 @@
-use crate::ast::{AstTokenPayload, DenseToken, Node, SparseToken};
+use crate::ast::{AstTokenPayload, DenseToken, Node, Scope, SparseToken};
 use crate::declaration::{Context, Declaration, Signature, Type};
 use crate::error::{Locatable, Location};
 use crate::CompilerError;
@@ -285,10 +285,10 @@ fn specialize_node<'a>(
 /// Takes an sparse AST. A sparse AST does not contain all type information for a symbol or function.
 /// This function tries to figure out these types and fills gaps.
 pub fn specialize<'a>(
-    node: SparseNode<'a>,
+    scope: Scope<SparseToken>,
     context: &mut Context,
-) -> Result<DenseNode, CompilerError> {
-    specialize_node(context, node, None)
+) -> Result<Scope<DenseToken>, CompilerError> {
+    scope.map_into_statements_mut(&mut |node| specialize_node(context, node, None))
 }
 
 #[cfg(test)]
@@ -341,7 +341,7 @@ mod specs {
                 "stdout".to_string() => Declaration::full_template_statement(1),
             },
         };
-        let dense = specialize(sparse, &mut context);
+        let dense = specialize_node(&mut context, sparse, None);
         assert_ok!(dense);
         assert_eq!(dense.unwrap(), expected);
     }
@@ -359,7 +359,7 @@ mod specs {
         };
 
         let mut context = Context::new();
-        let dense = specialize(sparse, &mut context);
+        let dense = specialize_node(&mut context, sparse, None);
         assert_ok!(dense);
         let dense = dense.unwrap();
 
@@ -407,7 +407,7 @@ mod specs {
                 "i8".to_string() => Declaration::variable(Type::Type),
             },
         };
-        let dense = specialize(sparse, &mut context);
+        let dense = specialize_node(&mut context, sparse, None);
         assert_ok!(dense);
         let dense = dense.unwrap();
 
@@ -490,7 +490,7 @@ mod specs {
 
         let dense = sparse
             .into_iter()
-            .map(|sparse| specialize(sparse, &mut context))
+            .map(|sparse| specialize_node(&mut context, sparse, None))
             .collect::<Vec<_>>();
 
         let dense = dense.into_iter().map(|d| d.unwrap()).collect::<Vec<_>>();
@@ -602,7 +602,7 @@ mod specs {
                 "i8".to_string() => Declaration::variable(Type::Type),
             },
         };
-        let dense = specialize(sparse, &mut context);
+        let dense = specialize_node(&mut context, sparse, None);
         assert_ok!(dense);
         let dense = dense.unwrap();
 

@@ -1,11 +1,11 @@
 //! This module is deprecated, and will be replaced by meta programming later.
-use crate::ast::{AstTokenPayload, Node, SparseToken};
+use crate::ast::{AstTokenPayload, Node, Scope, SparseToken};
 use crate::CompilerError;
 
 #[cfg(test)]
-use crate::ast::DenseAst;
+use crate::ast::DenseToken;
 
-pub fn generate_sparse(statement: Node<SparseToken>) -> Result<Node<SparseToken>, CompilerError> {
+fn generate_sparse_node(statement: Node<SparseToken>) -> Result<Node<SparseToken>, CompilerError> {
     match statement.root.payload {
         AstTokenPayload::Pipe => Ok(Node {
             root: statement.args[1].root.clone(),
@@ -23,9 +23,13 @@ pub fn generate_sparse(statement: Node<SparseToken>) -> Result<Node<SparseToken>
     }
 }
 
+pub fn generate_sparse(scope: Scope<SparseToken>) -> Result<Scope<SparseToken>, CompilerError> {
+    scope.map_into_statements(&generate_sparse_node)
+}
+
 /// Fills out the macros and runs all the custom compiler stuff.
 #[cfg(test)]
-pub fn generate(ast: DenseAst) -> Result<DenseAst, CompilerError> {
+pub fn generate(ast: Scope<DenseToken>) -> Result<Scope<DenseToken>, CompilerError> {
     let statements = ast
         .statements
         .into_iter()
@@ -45,7 +49,10 @@ pub fn generate(ast: DenseAst) -> Result<DenseAst, CompilerError> {
             }),
         })
         .collect::<Result<Vec<_>, _>>()?;
-    Ok(DenseAst { statements })
+    Ok(Scope {
+        statements,
+        scopes: Default::default(),
+    })
 }
 
 #[cfg(test)]
@@ -57,7 +64,7 @@ mod specs {
 
     #[test]
     fn milestone_1() {
-        let input = DenseAst {
+        let input = Scope {
             statements: vec![Node {
                 root: DenseToken {
                     payload: AstTokenPayload::Pipe,
@@ -89,12 +96,13 @@ mod specs {
                     }),
                 ],
             }],
+            scopes: Default::default(),
         };
 
         let actual = generate(input);
         assert_ok!(actual);
         let actual = actual.unwrap();
-        let expected = DenseAst {
+        let expected = Scope {
             statements: vec![Node {
                 root: DenseToken {
                     payload: AstTokenPayload::Symbol("stdout".to_owned()),
@@ -115,6 +123,7 @@ mod specs {
                     },
                 })],
             }],
+            scopes: Default::default(),
         };
         assert_eq!(actual, expected);
     }

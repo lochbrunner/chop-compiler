@@ -11,7 +11,6 @@ mod parser;
 mod simplifier;
 mod specializer;
 pub mod token;
-pub use ast::DenseAst;
 use declaration::Context;
 pub use error::CompilerError;
 
@@ -24,14 +23,9 @@ pub fn build(code: &str) -> Result<Vec<ByteCode>, CompilerError> {
     let mut context = Context::default();
 
     let tokens = lexer::lex(code)?;
-    let mut state = parser::ParserState::new();
-    let mut ast = DenseAst::new();
-    while let Some((statement, new_state)) = parser::parse(state, &mut context, &tokens)? {
-        state = new_state;
-        let statement = generator::generate_sparse(statement)?;
-        let statement = specializer::specialize(statement, &mut context)?;
-        ast.statements.push(statement);
-    }
+    let sparse_ast = parser::parse(&mut context, &tokens)?;
+    let sparse_ast = generator::generate_sparse(sparse_ast)?;
+    let ast = specializer::specialize(sparse_ast, &mut context)?;
     let ast = simplifier::simplify(ast)?;
     // TODO: cache
     bytecode::compile(&context, ast)
@@ -40,7 +34,6 @@ pub fn build(code: &str) -> Result<Vec<ByteCode>, CompilerError> {
 #[cfg(test)]
 mod e2e {
     use super::*;
-    use crate::ast::DenseAst;
     use declaration::{Declaration, Type};
     use ByteCode::*;
 
@@ -185,18 +178,11 @@ mod e2e {
                 "i32".to_string() => Declaration::variable(Type),
             },
         };
+
         let tokens = lexer::lex(code).unwrap();
-        let mut state = parser::ParserState::new();
-        let mut ast = DenseAst::new();
-        while let Some((statement, new_state)) =
-            parser::parse(state, &mut context, &tokens).unwrap()
-        {
-            state = new_state;
-            let statement = generator::generate_sparse(statement).unwrap();
-            let statement = specializer::specialize(statement, &mut context).unwrap();
-            ast.statements.push(statement);
-        }
-        let ast = simplifier::simplify(ast).unwrap();
+        let sparse_ast = parser::parse(&mut context, &tokens).unwrap();
+        let sparse_ast = generator::generate_sparse(sparse_ast).unwrap();
+        let ast = specializer::specialize(sparse_ast, &mut context).unwrap();
         let actual = bytecode::compile(&context, ast);
 
         assert_ok!(actual);
@@ -253,17 +239,9 @@ mod e2e {
             },
         };
         let tokens = lexer::lex(code).unwrap();
-        let mut state = parser::ParserState::new();
-        let mut ast = DenseAst::new();
-        while let Some((statement, new_state)) =
-            parser::parse(state, &mut context, &tokens).unwrap()
-        {
-            state = new_state;
-            let statement = generator::generate_sparse(statement).unwrap();
-            let statement = specializer::specialize(statement, &mut context).unwrap();
-            ast.statements.push(statement);
-        }
-        let ast = simplifier::simplify(ast).unwrap();
+        let sparse_ast = parser::parse(&mut context, &tokens).unwrap();
+        let sparse_ast = generator::generate_sparse(sparse_ast).unwrap();
+        let ast = specializer::specialize(sparse_ast, &mut context).unwrap();
         let actual = bytecode::compile(&context, ast);
 
         assert_ok!(actual);
@@ -281,17 +259,9 @@ mod e2e {
 
         let mut context = Context::default();
         let tokens = lexer::lex(code).unwrap();
-        let mut state = parser::ParserState::new();
-        let mut ast = DenseAst::new();
-        while let Some((statement, new_state)) =
-            parser::parse(state, &mut context, &tokens).unwrap()
-        {
-            state = new_state;
-            let statement = generator::generate_sparse(statement).unwrap();
-            let statement = specializer::specialize(statement, &mut context).unwrap();
-            ast.statements.push(statement);
-        }
-        let ast = simplifier::simplify(ast).unwrap();
+        let sparse_ast = parser::parse(&mut context, &tokens).unwrap();
+        let sparse_ast = generator::generate_sparse(sparse_ast).unwrap();
+        let ast = specializer::specialize(sparse_ast, &mut context).unwrap();
         let actual = bytecode::compile(&context, ast);
         assert_ok!(actual);
     }
@@ -316,17 +286,9 @@ mod e2e {
             },
         };
         let tokens = lexer::lex(code).unwrap();
-        let mut state = parser::ParserState::new();
-        let mut ast = DenseAst::new();
-        while let Some((statement, new_state)) =
-            parser::parse(state, &mut context, &tokens).unwrap()
-        {
-            state = new_state;
-            let statement = generator::generate_sparse(statement).unwrap();
-            let statement = specializer::specialize(statement, &mut context).unwrap();
-            ast.statements.push(statement);
-        }
-        let ast = simplifier::simplify(ast).unwrap();
+        let sparse_ast = parser::parse(&mut context, &tokens).unwrap();
+        let sparse_ast = generator::generate_sparse(sparse_ast).unwrap();
+        let ast = specializer::specialize(sparse_ast, &mut context).unwrap();
         let actual = bytecode::compile(&context, ast);
 
         assert_ok!(actual);

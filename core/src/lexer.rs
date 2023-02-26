@@ -80,6 +80,7 @@ fn operators(code: Span) -> IResult<Span, TokenPayload> {
         map(tag("|"), |_| TokenPayload::Pipe),
         map(tag(":="), |_| TokenPayload::DefineLocal),
         map(tag(":"), |_| TokenPayload::TypeDeclaration),
+        map(tag(":+"), |_| TokenPayload::TypeDeclaration),
         map(tag("as"), |_| TokenPayload::Cast),
     ))(code)
 }
@@ -150,7 +151,10 @@ fn parse_punctuation(code: Span) -> IResult<Span, TokenPayload> {
         alt((
             map(tag("("), |_| TokenPayload::ParenthesesL),
             map(tag(")"), |_| TokenPayload::ParenthesesR),
+            map(tag("{"), |_| TokenPayload::BraceL),
+            map(tag("}"), |_| TokenPayload::BraceR),
             map(tag(","), |_| TokenPayload::Delimiter),
+            map(tag("."), |_| TokenPayload::Dot),
         ))(code),
     )
 }
@@ -185,7 +189,7 @@ pub fn lex(code: &str) -> Result<Vec<Token>, CompilerError> {
                 Ok(tokens)
             } else {
                 Err(CompilerError {
-                    msg: format!("Incomplete Error: {:?}", remaining.fragment),
+                    msg: format!("[L1] Incomplete Error: {:?}", remaining.fragment),
                     location: Location {
                         line: remaining.line,
                         begin: remaining.offset,
@@ -338,7 +342,7 @@ mod specs {
                 begin: 5,
                 end: 5,
             },
-            msg: "Incomplete Error: \"~ |\"".to_owned(),
+            msg: "[L1] Incomplete Error: \"~ |\"".to_owned(),
         });
 
         assert!(actual.is_err());
@@ -716,6 +720,46 @@ mod specs {
             ParenthesesR,
             Add,
             Integer(1),
+        ];
+
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn milestone_6() {
+        let actual = lex("
+        obj := {
+            a :+ 12
+            b :+ a * 3
+        }
+        stdout obj.a + obj.b");
+        assert_ok!(actual);
+        let actual = actual.unwrap();
+        let actual = actual.into_iter().map(|t| t.token).collect::<Vec<_>>();
+
+        let expected = vec![
+            Ident("obj".to_owned()),
+            DefineLocal,
+            BraceL,
+            Ident("a".to_owned()),
+            TypeDeclaration,
+            Add,
+            Integer(12),
+            Ident("b".to_owned()),
+            TypeDeclaration,
+            Add,
+            Ident("a".to_owned()),
+            Multiply,
+            Integer(3),
+            BraceR,
+            Ident("stdout".to_owned()),
+            Ident("obj".to_owned()),
+            Dot,
+            Ident("a".to_owned()),
+            Add,
+            Ident("obj".to_owned()),
+            Dot,
+            Ident("b".to_owned()),
         ];
 
         assert_eq!(actual, expected);
