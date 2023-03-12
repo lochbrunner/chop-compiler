@@ -114,8 +114,7 @@ pub fn simplify(scope: Scope<DenseToken>) -> Result<Scope<DenseToken>, CompilerE
 #[cfg(test)]
 mod specs {
     use super::*;
-    use crate::ast::AstTokenPayload;
-    use crate::ast::AstTokenPayloadStub;
+    use crate::ast::{AstTokenPayload, AstTokenPayloadStub, Statement};
     // use crate::token::TokenPayload;
 
     fn create_int(value: i32) -> AstTokenPayload {
@@ -151,8 +150,10 @@ mod specs {
                         },
                     ],
                 }],
-            }],
-            scopes: Default::default(),
+            }]
+            .into_iter()
+            .map(Statement::InScope)
+            .collect(),
         };
 
         let actual = simplify(input);
@@ -167,8 +168,10 @@ mod specs {
                     root: DenseToken::stub(create_int(38)),
                     args: vec![],
                 }],
-            }],
-            scopes: Default::default(),
+            }]
+            .into_iter()
+            .map(Statement::InScope)
+            .collect(),
         };
 
         assert_eq!(actual, expected);

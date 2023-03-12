@@ -314,7 +314,7 @@ pub struct ParserState {
     stack: ParseStack,
     // For more than 15 items a Vec is faster than a HashMap.
     // https://gist.github.com/daboross/976978d8200caf86e02acb6805961195
-    exported: Vec<ExportItem>,
+    // exported: Vec<ExportItem>,
 }
 
 impl ParserState {
@@ -322,7 +322,7 @@ impl ParserState {
         Self {
             token_start: 0,
             stack: ParseStack::new(),
-            exported: Vec::new(),
+            // exported: Vec::new(),
         }
     }
 }
@@ -338,7 +338,7 @@ fn parse_impl(
     let ParserState {
         mut stack,
         token_start,
-        exported: _,
+        // exported: _,
     } = state;
 
     let mut scope: ast::Scope<SparseToken> = Default::default();
@@ -380,24 +380,24 @@ fn parse_impl(
             TokenPayload::BraceL => {
                 if stack.is_completable() {
                     let statement = create_statement(context, &mut stack)?;
-                    scope.statements.push(statement);
+                    scope.statements.push(ast::Statement::InScope(statement));
                 }
                 let (inner_scope, new_i) = parse_impl(
                     ParserState {
                         token_start: i,
                         stack: ParseStack::new(),
-                        exported: Vec::new(),
+                        // exported: Vec::new(),
                     },
                     context,
                     tokens,
                 )?;
                 i = new_i;
-                scope.scopes.push(inner_scope);
+                scope.statements.push(ast::Statement::Nested(inner_scope));
             }
             TokenPayload::BraceR => {
                 if stack.is_completable() {
                     let statement = create_statement(context, &mut stack)?;
-                    scope.statements.push(statement);
+                    scope.statements.push(ast::Statement::InScope(statement));
                 }
                 return Ok((scope, i + 1));
             }
@@ -407,7 +407,7 @@ fn parse_impl(
                 } else {
                     if stack.is_completable() {
                         let statement = create_statement(context, &mut stack)?;
-                        scope.statements.push(statement);
+                        scope.statements.push(ast::Statement::InScope(statement));
                     }
                     match context.declarations.get(ident) {
                         None => {
@@ -457,7 +457,7 @@ fn parse_impl(
                 if stack.is_completable() {
                     let statement = create_statement(context, &mut stack)?;
                     stack.symbol.push(Symbol::Raw(token.clone()));
-                    scope.statements.push(statement);
+                    scope.statements.push(ast::Statement::InScope(statement));
                 } else {
                     stack.symbol.push(Symbol::Raw(token.clone()));
                 }
@@ -551,7 +551,7 @@ fn parse_impl(
         return Ok((scope, i));
     } else if stack.is_completable() {
         let statement = create_statement(context, &mut stack)?;
-        scope.statements.push(statement);
+        scope.statements.push(ast::Statement::InScope(statement));
         return Ok((scope, i));
     } else {
         Err(CompilerError::global(&format!(
@@ -585,6 +585,8 @@ pub fn parse(
 
 #[cfg(test)]
 mod specs {
+    use crate::ast::Statement;
+
     use super::*;
     use ast::{IntegerStub, LexerTokenPayloadStub, Node, Scope, StringStub};
     use TokenPayload::*;
@@ -738,7 +740,7 @@ mod specs {
             ],
         };
 
-        assert_eq!(actual.statements[0], expected);
+        assert_eq!(actual.statements[0], Statement::InScope(expected));
     }
 
     #[test]
@@ -769,7 +771,7 @@ mod specs {
             }],
         };
 
-        assert_eq!(actual.statements[0], expected);
+        assert_eq!(actual.statements[0], Statement::InScope(expected));
     }
 
     #[test]
@@ -794,7 +796,7 @@ mod specs {
             }],
         };
 
-        assert_eq!(actual.statements[0], expected);
+        assert_eq!(actual.statements[0], Statement::InScope(expected));
     }
 
     #[test]
@@ -812,20 +814,18 @@ mod specs {
         let (actual, _) = actual.unwrap();
         assert!(actual.statements.len() == 1);
 
-        let actual = ast::DebugNode::from(actual.statements.into_iter().nth(0).unwrap());
-
-        let expected = ast::DebugNode {
-            root: AstTokenPayload::from(Ident("stdout".to_string())).unwrap(),
+        let expected = SparseNode {
+            root: StringStub::stub("stdout"),
             args: vec![Node {
-                root: AstTokenPayload::from(Add).unwrap(),
+                root: LexerTokenPayloadStub::stub(Add),
                 args: vec![
-                    Node::leaf(AstTokenPayload::from(Integer(3)).unwrap()),
-                    Node::leaf(AstTokenPayload::from(Integer(5)).unwrap()),
+                    Node::leaf(IntegerStub::stub(3)),
+                    Node::leaf(IntegerStub::stub(5)),
                 ],
             }],
         };
 
-        assert_eq!(actual, expected);
+        assert_eq!(actual.statements[0], Statement::InScope(expected));
     }
 
     #[test]
@@ -868,7 +868,7 @@ mod specs {
             }],
         };
 
-        assert_eq!(actual.statements[0], expected);
+        assert_eq!(actual.statements[0], Statement::InScope(expected));
     }
 
     #[test]
@@ -913,7 +913,7 @@ mod specs {
             }],
         };
 
-        assert_eq!(actual.statements[0], expected);
+        assert_eq!(actual.statements[0], Statement::InScope(expected));
     }
 
     #[test]
@@ -952,7 +952,7 @@ mod specs {
             }],
         };
 
-        assert_eq!(actual.statements[0], expected);
+        assert_eq!(actual.statements[0], Statement::InScope(expected));
     }
 
     #[test]
@@ -1023,7 +1023,7 @@ mod specs {
             }],
         };
 
-        assert_eq!(actual.statements[0], expected);
+        assert_eq!(actual.statements[0], Statement::InScope(expected));
     }
 
     #[test]
@@ -1064,7 +1064,7 @@ mod specs {
             }],
         };
 
-        assert_eq!(actual.statements[0], expected);
+        assert_eq!(actual.statements[0], Statement::InScope(expected));
     }
 
     #[test]
@@ -1090,7 +1090,7 @@ mod specs {
                 Node::leaf(IntegerStub::stub(3)),
             ],
         };
-        assert_eq!(actual.statements[0], expected);
+        assert_eq!(actual.statements[0], Statement::InScope(expected));
         // Declaration
         assert!(context.declarations.get("a").is_some());
         let actual_declaration = context.declarations.get("a").unwrap();
@@ -1129,7 +1129,7 @@ mod specs {
                 },
             ],
         };
-        assert_eq!(actual.statements[0], expected);
+        assert_eq!(actual.statements[0], Statement::InScope(expected));
         // Declaration
         assert!(context.declarations.get("a").is_some());
         let actual_declaration = context.declarations.get("a").unwrap();
@@ -1177,14 +1177,14 @@ mod specs {
         let (actual, _) = actual.unwrap();
 
         let expected = vec![
-            Node {
+            Statement::InScope(Node {
                 root: LexerTokenPayloadStub::stub(DefineLocal),
                 args: vec![
                     Node::leaf(StringStub::stub("a")),
                     Node::leaf(IntegerStub::stub(3)),
                 ],
-            },
-            Node {
+            }),
+            Statement::InScope(Node {
                 root: LexerTokenPayloadStub::stub(DefineLocal),
                 args: vec![
                     Node::leaf(StringStub::stub("b")),
@@ -1196,15 +1196,15 @@ mod specs {
                         ],
                     },
                 ],
-            },
-            Node {
+            }),
+            Statement::InScope(Node {
                 root: LexerTokenPayloadStub::stub(DefineLocal),
                 args: vec![
                     Node::leaf(StringStub::stub("c")),
                     Node::leaf(IntegerStub::stub(7)),
                 ],
-            },
-            Node {
+            }),
+            Statement::InScope(Node {
                 root: StringStub::stub("stdout"),
                 args: vec![Node {
                     root: StringStub::stub("max"),
@@ -1213,7 +1213,7 @@ mod specs {
                         Node::leaf(StringStub::stub("c")),
                     ],
                 }],
-            },
+            }),
         ];
 
         assert_eq!(actual.statements, expected);
@@ -1260,18 +1260,18 @@ mod specs {
         let (actual, _) = actual.unwrap();
 
         let expected = [
-            Node {
+            Statement::InScope(Node {
                 root: LexerTokenPayloadStub::stub(DefineLocal),
                 args: vec![
                     Node::leaf(StringStub::stub("a")),
                     Node::leaf(StringStub::stub("i16")),
                     Node::leaf(IntegerStub::stub(3)),
                 ],
-            },
-            Node {
+            }),
+            Statement::InScope(Node {
                 root: StringStub::stub("stdout"),
                 args: vec![Node::leaf(StringStub::stub("a"))],
-            },
+            }),
         ];
 
         assert_eq!(&actual.statements, &expected);
@@ -1330,7 +1330,7 @@ mod specs {
         assert_ok!(actual);
         let (actual, _) = actual.unwrap();
 
-        let expected = [
+        let expected: Vec<_> = vec![
             Node {
                 root: LexerTokenPayloadStub::stub(DefineLocal),
                 args: vec![
@@ -1377,7 +1377,10 @@ mod specs {
                     ],
                 }],
             },
-        ];
+        ]
+        .into_iter()
+        .map(Statement::InScope)
+        .collect();
 
         assert_eq!(&actual.statements, &expected);
     }
@@ -1436,7 +1439,7 @@ mod specs {
             ],
         };
 
-        assert_eq!(actual.statements[0], expected);
+        assert_eq!(actual.statements[0], Statement::InScope(expected));
     }
 
     #[test]
@@ -1589,7 +1592,7 @@ mod specs {
             }],
         };
 
-        assert_eq!(actual.statements[0], expected);
+        assert_eq!(actual.statements[0], Statement::InScope(expected));
     }
 
     #[test]
@@ -1623,41 +1626,42 @@ mod specs {
         let (actual, _) = actual.unwrap();
 
         let expected: ast::Scope<SparseToken> = Scope {
-            statements: vec![Node {
-                root: LexerTokenPayloadStub::stub(DefineLocal),
-                args: vec![
-                    Node::leaf(StringStub::stub("a")),
-                    Node::leaf(IntegerStub::stub(12)),
-                ],
-            }],
-            scopes: vec![Scope {
-                statements: vec![
-                    Node {
-                        root: LexerTokenPayloadStub::stub(DefineLocal),
-                        args: vec![
-                            Node::leaf(StringStub::stub("b")),
-                            Node {
-                                root: LexerTokenPayloadStub::stub(Multiply),
+            statements: vec![
+                Statement::InScope(Node {
+                    root: LexerTokenPayloadStub::stub(DefineLocal),
+                    args: vec![
+                        Node::leaf(StringStub::stub("a")),
+                        Node::leaf(IntegerStub::stub(12)),
+                    ],
+                }),
+                Statement::Nested(Scope {
+                    statements: vec![
+                        Statement::InScope(Node {
+                            root: LexerTokenPayloadStub::stub(DefineLocal),
+                            args: vec![
+                                Node::leaf(StringStub::stub("b")),
+                                Node {
+                                    root: LexerTokenPayloadStub::stub(Multiply),
+                                    args: vec![
+                                        Node::leaf(StringStub::stub("a")),
+                                        Node::leaf(IntegerStub::stub(3)),
+                                    ],
+                                },
+                            ],
+                        }),
+                        Statement::InScope(Node {
+                            root: StringStub::stub("stdout"),
+                            args: vec![Node {
+                                root: LexerTokenPayloadStub::stub(Add),
                                 args: vec![
                                     Node::leaf(StringStub::stub("a")),
-                                    Node::leaf(IntegerStub::stub(3)),
+                                    Node::leaf(StringStub::stub("b")),
                                 ],
-                            },
-                        ],
-                    },
-                    Node {
-                        root: StringStub::stub("stdout"),
-                        args: vec![Node {
-                            root: LexerTokenPayloadStub::stub(Add),
-                            args: vec![
-                                Node::leaf(StringStub::stub("a")),
-                                Node::leaf(StringStub::stub("b")),
-                            ],
-                        }],
-                    },
-                ],
-                scopes: vec![],
-            }],
+                            }],
+                        }),
+                    ],
+                }),
+            ],
         };
 
         assert_eq!(actual, expected);

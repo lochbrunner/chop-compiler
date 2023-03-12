@@ -1,4 +1,4 @@
-use crate::ast::{AstTokenPayload, DenseToken, Node, Scope};
+use crate::ast::{AstTokenPayload, DenseToken, Node, Scope, Statement};
 use crate::declaration::{Context, Signature, Type};
 use crate::error::{CompilerError, Location};
 use std::collections::HashMap;
@@ -266,15 +266,35 @@ fn unroll_node<'a>(
     }
 }
 
+fn unroll_statement<'a>(
+    register_map: &mut HashMap<&'a str, usize>,
+    context: &Context,
+    statement: &'a Statement<DenseToken>,
+    bytecode: &mut Vec<ByteCode>,
+) -> Result<Type, CompilerError> {
+    match statement {
+        Statement::InScope(node) => unroll_node(register_map, context, node, bytecode),
+        Statement::Nested(scope) => {
+            for statement in scope.statements.iter() {
+                unroll_statement(register_map, context, statement, bytecode)?;
+            }
+            Ok(Type::Void)
+        }
+    }
+}
+
 pub fn compile(context: &Context, ast: Scope<DenseToken>) -> Result<Vec<ByteCode>, CompilerError> {
     let mut bytecode = vec![];
     let mut register_map: HashMap<&str, usize> = hashmap! {"__init__"=> 1};
     bytecode.push(ByteCode::Alloca(Type::Int32));
     bytecode.push(ByteCode::PushInt32(0));
     bytecode.push(ByteCode::Store(Type::Int32, 0));
-    for statement in ast.statements.iter() {
-        unroll_node(&mut register_map, context, statement, &mut bytecode)?;
-    }
+    unroll_statement(
+        &mut register_map,
+        context,
+        &Statement::Nested(ast),
+        &mut bytecode,
+    )?;
     Ok(bytecode)
 }
 
@@ -292,14 +312,13 @@ mod specs {
     #[test]
     fn milestone_1() {
         let input = Scope {
-            statements: vec![Node {
+            statements: vec![Statement::InScope(Node {
                 root: DenseToken::stub(TokenPayload::Ident("stdout".to_owned())),
                 args: vec![Node::leaf(DenseToken::stub_typed(
                     TokenPayload::Integer(42),
                     Type::Int32,
                 ))],
-            }],
-            scopes: Default::default(),
+            })],
         };
 
         let context = Context {
@@ -319,7 +338,7 @@ mod specs {
     #[test]
     fn operator_simple() {
         let input = Scope {
-            statements: vec![Node {
+            statements: vec![Statement::InScope(Node {
                 root: DenseToken::stub(TokenPayload::Ident("stdout".to_owned())),
                 args: vec![Node {
                     root: DenseToken::stub(TokenPayload::Add),
@@ -334,8 +353,7 @@ mod specs {
                         )),
                     ],
                 }],
-            }],
-            scopes: Default::default(),
+            })],
         };
         let context = Context {
             declarations: hashmap! {
@@ -401,8 +419,10 @@ mod specs {
                         ],
                     }],
                 },
-            ],
-            scopes: Default::default(),
+            ]
+            .into_iter()
+            .map(Statement::InScope)
+            .collect(),
         };
 
         let context = Context {
@@ -511,8 +531,10 @@ mod specs {
                         ],
                     }],
                 },
-            ],
-            scopes: Default::default(),
+            ]
+            .into_iter()
+            .map(Statement::InScope)
+            .collect(),
         };
 
         let context = Context {
@@ -607,8 +629,10 @@ mod specs {
                         ],
                     }],
                 },
-            ],
-            scopes: Default::default(),
+            ]
+            .into_iter()
+            .map(Statement::InScope)
+            .collect(),
         };
 
         let context = Context {

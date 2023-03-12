@@ -30,10 +30,8 @@ pub fn generate_sparse(scope: Scope<SparseToken>) -> Result<Scope<SparseToken>, 
 /// Fills out the macros and runs all the custom compiler stuff.
 #[cfg(test)]
 pub fn generate(ast: Scope<DenseToken>) -> Result<Scope<DenseToken>, CompilerError> {
-    let statements = ast
-        .statements
-        .into_iter()
-        .map(|statement| match statement.root.payload {
+    ast.map_into_statements(
+        &|statement: Node<DenseToken>| match statement.root.payload {
             AstTokenPayload::Pipe => Ok(Node {
                 root: statement.args[1].root.clone(),
                 args: vec![statement.args[0].clone()],
@@ -47,25 +45,21 @@ pub fn generate(ast: Scope<DenseToken>) -> Result<Scope<DenseToken>, CompilerErr
                     statement.root.payload
                 ),
             }),
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-    Ok(Scope {
-        statements,
-        scopes: Default::default(),
-    })
+        },
+    )
 }
 
 #[cfg(test)]
 mod specs {
     use super::*;
-    use crate::ast::{DenseToken, IntegerProvider};
+    use crate::ast::{DenseToken, IntegerProvider, Statement};
     use crate::declaration::Type;
     use crate::error::Location;
 
     #[test]
     fn milestone_1() {
         let input = Scope {
-            statements: vec![Node {
+            statements: vec![Statement::InScope(Node {
                 root: DenseToken {
                     payload: AstTokenPayload::Pipe,
                     return_type: Type::Int32,
@@ -95,15 +89,14 @@ mod specs {
                         },
                     }),
                 ],
-            }],
-            scopes: Default::default(),
+            })],
         };
 
         let actual = generate(input);
         assert_ok!(actual);
         let actual = actual.unwrap();
         let expected = Scope {
-            statements: vec![Node {
+            statements: vec![Statement::InScope(Node {
                 root: DenseToken {
                     payload: AstTokenPayload::Symbol("stdout".to_owned()),
                     return_type: Type::Int32,
@@ -122,8 +115,7 @@ mod specs {
                         end: 30,
                     },
                 })],
-            }],
-            scopes: Default::default(),
+            })],
         };
         assert_eq!(actual, expected);
     }

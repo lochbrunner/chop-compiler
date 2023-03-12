@@ -159,29 +159,32 @@ impl PartialEq for SparseToken {
     }
 }
 
+#[derive(Debug, PartialEq)]
+pub enum Statement<T> {
+    InScope(Node<T>),
+    Nested(Scope<T>),
+}
+
 #[derive(Debug, Default, PartialEq)]
 pub struct Scope<T> {
-    pub statements: Vec<Node<T>>, // TODO: add visibility
-    // pub declarations: Vec<()>,    // TODO: add visibility
-    pub scopes: Vec<Scope<T>>, // TODO: add visibility
+    pub statements: Vec<Statement<T>>, // TODO: add visibility
+                                       // pub declarations: Vec<()>,    // TODO: add visibility
 }
 
 impl<T> Scope<T> {
-    pub fn map_statements<R, E>(
+    pub fn map_statements<R, E: std::fmt::Debug>(
         &self,
         mapper: &dyn Fn(&Node<T>) -> Result<Node<R>, E>,
     ) -> Result<Scope<R>, E> {
         let statements = self
             .statements
             .iter()
-            .map(mapper)
+            .map(|statement| match statement {
+                Statement::InScope(node) => mapper(node).map(Statement::InScope),
+                Statement::Nested(scope) => scope.map_statements(mapper).map(Statement::Nested),
+            })
             .collect::<Result<Vec<_>, _>>()?;
-        let scopes = self
-            .scopes
-            .iter()
-            .map(|s| s.map_statements(mapper))
-            .collect::<Result<Vec<_>, _>>()?;
-        Ok(Scope { statements, scopes })
+        Ok(Scope { statements })
     }
     pub fn map_into_statements<R, E>(
         self,
@@ -190,14 +193,14 @@ impl<T> Scope<T> {
         let statements = self
             .statements
             .into_iter()
-            .map(mapper)
+            .map(|statement| match statement {
+                Statement::InScope(node) => mapper(node).map(Statement::InScope),
+                Statement::Nested(scope) => {
+                    scope.map_into_statements(mapper).map(Statement::Nested)
+                }
+            })
             .collect::<Result<Vec<_>, _>>()?;
-        let scopes = self
-            .scopes
-            .into_iter()
-            .map(|s| s.map_into_statements(mapper))
-            .collect::<Result<Vec<_>, _>>()?;
-        Ok(Scope { statements, scopes })
+        Ok(Scope { statements })
     }
 
     pub fn map_into_statements_mut<R, E>(
@@ -207,14 +210,14 @@ impl<T> Scope<T> {
         let statements = self
             .statements
             .into_iter()
-            .map(|node| mapper(node))
+            .map(|statement| match statement {
+                Statement::InScope(node) => mapper(node).map(Statement::InScope),
+                Statement::Nested(scope) => {
+                    scope.map_into_statements_mut(mapper).map(Statement::Nested)
+                }
+            })
             .collect::<Result<Vec<_>, _>>()?;
-        let scopes = self
-            .scopes
-            .into_iter()
-            .map(|s| s.map_into_statements_mut(mapper))
-            .collect::<Result<Vec<_>, _>>()?;
-        Ok(Scope { statements, scopes })
+        Ok(Scope { statements })
     }
 }
 
