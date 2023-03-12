@@ -3,7 +3,6 @@ use crate::ast::{AstTokenPayload, SparseToken};
 use crate::declaration::{Context, Declaration, Type};
 use crate::error::{CompilerError, Location, ToCompilerError};
 use crate::token::{Token, TokenPayload};
-use std::collections::VecDeque;
 use std::env;
 use std::rc::Rc;
 
@@ -299,7 +298,7 @@ fn create_statement<'a>(
         }
     }
     Err(CompilerError::global(&format!(
-        "Parser could not process all tokens. Remaining are {:?}",
+        "[P6] Parser could not process all tokens. Remaining are {:?}",
         stack.symbol
     )))
 }
@@ -311,9 +310,8 @@ pub struct ExportItem {
 
 #[derive(Debug)]
 pub struct ParserState {
-    token_start: Option<usize>,
+    token_start: usize,
     stack: ParseStack,
-    scopes: VecDeque<ParserState>,
     // For more than 15 items a Vec is faster than a HashMap.
     // https://gist.github.com/daboross/976978d8200caf86e02acb6805961195
     exported: Vec<ExportItem>,
@@ -322,9 +320,8 @@ pub struct ParserState {
 impl ParserState {
     pub fn new() -> Self {
         Self {
-            token_start: Some(0),
+            token_start: 0,
             stack: ParseStack::new(),
-            scopes: VecDeque::new(),
             exported: Vec::new(),
         }
     }
@@ -337,23 +334,19 @@ fn parse_impl(
     state: ParserState,
     context: &mut Context,
     tokens: &[Token],
-) -> Result<ast::Scope<SparseToken>, CompilerError> {
+) -> Result<(ast::Scope<SparseToken>, usize), CompilerError> {
     let ParserState {
         mut stack,
         token_start,
-        scopes: _,
         exported: _,
     } = state;
 
-    let mut scope = Default::default();
-    let token_start = if let Some(token_start) = token_start {
-        token_start
-    } else {
-        return Ok(scope);
-    };
+    let mut scope: ast::Scope<SparseToken> = Default::default();
     let mut expect_function_as_variable = false;
-
-    for (i, token) in tokens[token_start..].iter().enumerate() {
+    let mut i = token_start;
+    while i < tokens.len() {
+        let token = &tokens[i];
+        i += 1;
         match &token.token {
             TokenPayload::ParenthesesL => stack.infix.push(Infix {
                 token: token.clone(),
@@ -385,20 +378,28 @@ fn parse_impl(
                 stack.infix.pop();
             }
             TokenPayload::BraceL => {
-                let inner_scope = parse_impl(
+                if stack.is_completable() {
+                    let statement = create_statement(context, &mut stack)?;
+                    scope.statements.push(statement);
+                }
+                let (inner_scope, new_i) = parse_impl(
                     ParserState {
-                        token_start: Some(i + 1),
+                        token_start: i,
                         stack: ParseStack::new(),
-                        scopes: VecDeque::new(),
                         exported: Vec::new(),
                     },
                     context,
                     tokens,
                 )?;
+                i = new_i;
                 scope.scopes.push(inner_scope);
             }
             TokenPayload::BraceR => {
-                unimplemented!();
+                if stack.is_completable() {
+                    let statement = create_statement(context, &mut stack)?;
+                    scope.statements.push(statement);
+                }
+                return Ok((scope, i + 1));
             }
             TokenPayload::Ident(ident) => {
                 if expect_function_as_variable {
@@ -416,12 +417,18 @@ fn parse_impl(
                                     .last_symbol_is(&TokenPayload::TypeDeclaration)
                                     || stack.last_operator_is(&TokenPayload::Cast);
                                 let msg = if expect_type { "Type" } else { "Symbol" };
+                                let available = context
+                                    .declarations
+                                    .keys()
+                                    .cloned()
+                                    .collect::<Vec<_>>()
+                                    .join(", ");
 
                                 return Err(CompilerError::from_token::<Token>(
                                     token,
                                     format!(
-                                        "[P2] {} \"{}\" was not defined. Stack.symbol: {:?}",
-                                        msg, ident, stack.symbol
+                                        "[P2] {} \"{}\" was not defined. Stack.symbol: {:?}.\n\tAvailable are: {}",
+                                        msg, ident, stack.symbol, available
                                     ),
                                 ));
                             } else {
@@ -459,7 +466,7 @@ fn parse_impl(
                 if stack.symbol.is_empty() {
                     return Err(CompilerError {
                         location: token.loc.clone(),
-                        msg: "No identifer for new definition found!".to_string(),
+                        msg: "[P5] No identifier for new definition found!".to_string(),
                     });
                 } else {
                     stack.infix.push(Infix {
@@ -540,17 +547,17 @@ fn parse_impl(
             }
         }
     }
-
-    if stack.is_completable() {
+    if stack.infix.is_empty() && stack.symbol.is_empty() {
+        return Ok((scope, i));
+    } else if stack.is_completable() {
         let statement = create_statement(context, &mut stack)?;
         scope.statements.push(statement);
-        return Ok(scope);
+        return Ok((scope, i));
+    } else {
+        Err(CompilerError::global(&format!(
+            "[P7] Parser could not process all tokens. Remaining are",
+        )))
     }
-
-    Err(CompilerError::global(&format!(
-        "Parser could not process all tokens. Remaining are {:?}",
-        tokens
-    )))
 }
 
 pub fn parse(
@@ -558,26 +565,28 @@ pub fn parse(
     tokens: &[Token],
 ) -> Result<ast::Scope<SparseToken>, CompilerError> {
     match env::var("DEBUG_SHOW_IR") {
-        Ok(_) => parse_impl(ParserState::new(), context, tokens).map_err(|e| CompilerError {
-            location: e.location,
-            msg: format!(
-                "{}\n Input: {}",
-                e.msg,
-                tokens
-                    .iter()
-                    .map(|t| format!("{:?}", t.token))
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            ),
-        }),
-        Err(_) => parse_impl(ParserState::new(), context, tokens),
+        Ok(_) => parse_impl(ParserState::new(), context, &tokens)
+            .map_err(|e| CompilerError {
+                location: e.location,
+                msg: format!(
+                    "{}\n Input: {}",
+                    e.msg,
+                    tokens
+                        .iter()
+                        .map(|t| format!("{:?}", t.token))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ),
+            })
+            .map(|(s, _)| s),
+        Err(_) => parse_impl(ParserState::new(), context, &tokens).map(|(s, _)| s),
     }
 }
 
 #[cfg(test)]
 mod specs {
     use super::*;
-    use ast::{IntegerStub, LexerTokenPayloadStub, Node, StringStub};
+    use ast::{IntegerStub, LexerTokenPayloadStub, Node, Scope, StringStub};
     use TokenPayload::*;
     type SparseNode = Node<SparseToken>;
 
@@ -718,7 +727,7 @@ mod specs {
         };
         let actual = parse_impl(ParserState::new(), &mut context, &create_stub(&tokens));
         assert_ok!(actual);
-        let actual = actual.unwrap();
+        let (actual, _) = actual.unwrap();
         assert!(actual.statements.len() == 1);
 
         let expected = ast::Node {
@@ -749,7 +758,7 @@ mod specs {
 
         let actual = parse_impl(ParserState::new(), &mut context, &create_stub(&tokens));
         assert_ok!(actual);
-        let actual = actual.unwrap();
+        let (actual, _) = actual.unwrap();
         assert!(actual.statements.len() == 1);
 
         let expected = ast::Node {
@@ -774,7 +783,7 @@ mod specs {
         };
         let actual = parse_impl(ParserState::new(), &mut context, &create_stub(&tokens));
         assert_ok!(actual);
-        let actual = actual.unwrap();
+        let (actual, _) = actual.unwrap();
         assert!(actual.statements.len() == 1);
 
         let expected = ast::Node {
@@ -800,7 +809,7 @@ mod specs {
 
         let actual = parse_impl(ParserState::new(), &mut context, &create_stub(&tokens));
         assert_ok!(actual);
-        let actual = actual.unwrap();
+        let (actual, _) = actual.unwrap();
         assert!(actual.statements.len() == 1);
 
         let actual = ast::DebugNode::from(actual.statements.into_iter().nth(0).unwrap());
@@ -839,7 +848,7 @@ mod specs {
 
         let actual = parse_impl(ParserState::new(), &mut context, &create_stub(&tokens));
         assert_ok!(actual);
-        let actual = actual.unwrap();
+        let (actual, _) = actual.unwrap();
         assert!(actual.statements.len() == 1);
 
         let expected = SparseNode {
@@ -884,7 +893,7 @@ mod specs {
 
         let actual = parse_impl(ParserState::new(), &mut context, &create_stub(&tokens));
         assert_ok!(actual);
-        let actual = actual.unwrap();
+        let (actual, _) = actual.unwrap();
         assert!(actual.statements.len() == 1);
 
         let expected = SparseNode {
@@ -929,7 +938,7 @@ mod specs {
 
         let actual = parse_impl(ParserState::new(), &mut context, &create_stub(&tokens));
         assert_ok!(actual);
-        let actual = actual.unwrap();
+        let (actual, _) = actual.unwrap();
         assert!(actual.statements.len() == 1);
 
         let expected = SparseNode {
@@ -976,7 +985,7 @@ mod specs {
 
         let actual = parse_impl(ParserState::new(), &mut context, &create_stub(&tokens));
         assert_ok!(actual);
-        let actual = actual.unwrap();
+        let (actual, _) = actual.unwrap();
         assert!(actual.statements.len() == 1);
 
         let expected = SparseNode {
@@ -1035,7 +1044,7 @@ mod specs {
 
         let actual = parse_impl(ParserState::new(), &mut context, &create_stub(&tokens));
         assert_ok!(actual);
-        let actual = actual.unwrap();
+        let (actual, _) = actual.unwrap();
         assert!(actual.statements.len() == 1);
 
         let expected: Node<SparseToken> = Node {
@@ -1071,7 +1080,7 @@ mod specs {
 
         let actual = parse_impl(ParserState::new(), &mut context, &create_stub(&tokens));
         assert_ok!(actual);
-        let actual = actual.unwrap();
+        let (actual, _) = actual.unwrap();
         assert!(actual.statements.len() == 1);
 
         let expected = SparseNode {
@@ -1104,7 +1113,7 @@ mod specs {
         let mut context = Context::new();
         let actual = parse_impl(ParserState::new(), &mut context, &create_stub(&tokens));
         assert_ok!(actual);
-        let actual = actual.unwrap();
+        let (actual, _) = actual.unwrap();
         assert!(actual.statements.len() == 1);
 
         let expected = SparseNode {
@@ -1165,7 +1174,7 @@ mod specs {
 
         let actual = parse_impl(ParserState::new(), &mut context, &create_stub(&tokens));
         assert_ok!(actual);
-        let actual = actual.unwrap();
+        let (actual, _) = actual.unwrap();
 
         let expected = vec![
             Node {
@@ -1248,7 +1257,7 @@ mod specs {
 
         let actual = parse_impl(ParserState::new(), &mut context, &create_stub(&tokens));
         assert_ok!(actual);
-        let actual = actual.unwrap();
+        let (actual, _) = actual.unwrap();
 
         let expected = [
             Node {
@@ -1319,7 +1328,7 @@ mod specs {
 
         let actual = parse_impl(ParserState::new(), &mut context, &create_stub(&tokens));
         assert_ok!(actual);
-        let actual = actual.unwrap();
+        let (actual, _) = actual.unwrap();
 
         let expected = [
             Node {
@@ -1398,7 +1407,7 @@ mod specs {
 
         let actual = parse_impl(ParserState::new(), &mut context, &create_stub(&tokens));
         assert_ok!(actual);
-        let actual = actual.unwrap();
+        let (actual, _) = actual.unwrap();
 
         let expected: Node<SparseToken> = Node {
             root: LexerTokenPayloadStub::stub(DefineLocal),
@@ -1554,7 +1563,7 @@ mod specs {
 
         let actual = parse_impl(ParserState::new(), &mut context, &create_stub(&tokens));
         assert_ok!(actual);
-        let actual = actual.unwrap();
+        let (actual, _) = actual.unwrap();
         assert!(actual.statements.len() == 1);
 
         let expected: Node<SparseToken> = Node {
@@ -1581,6 +1590,77 @@ mod specs {
         };
 
         assert_eq!(actual.statements[0], expected);
+    }
+
+    #[test]
+    fn milestone_6_scope() {
+        // a := 12
+        // {
+        //     b := a * 3
+        //     stdout a + b
+        // }
+        let tokens = vec![
+            Ident("a".to_owned()),
+            DefineLocal,
+            Integer(12),
+            BraceL,
+            Ident("b".to_owned()),
+            DefineLocal,
+            Ident("a".to_owned()),
+            Multiply,
+            Integer(3),
+            Ident("stdout".to_owned()),
+            Ident("a".to_owned()),
+            Add,
+            Ident("b".to_owned()),
+            BraceR,
+        ];
+
+        let mut context = Context::default();
+
+        let actual = parse_impl(ParserState::new(), &mut context, &create_stub(&tokens));
+        assert_ok!(actual);
+        let (actual, _) = actual.unwrap();
+
+        let expected: ast::Scope<SparseToken> = Scope {
+            statements: vec![Node {
+                root: LexerTokenPayloadStub::stub(DefineLocal),
+                args: vec![
+                    Node::leaf(StringStub::stub("a")),
+                    Node::leaf(IntegerStub::stub(12)),
+                ],
+            }],
+            scopes: vec![Scope {
+                statements: vec![
+                    Node {
+                        root: LexerTokenPayloadStub::stub(DefineLocal),
+                        args: vec![
+                            Node::leaf(StringStub::stub("b")),
+                            Node {
+                                root: LexerTokenPayloadStub::stub(Multiply),
+                                args: vec![
+                                    Node::leaf(StringStub::stub("a")),
+                                    Node::leaf(IntegerStub::stub(3)),
+                                ],
+                            },
+                        ],
+                    },
+                    Node {
+                        root: StringStub::stub("stdout"),
+                        args: vec![Node {
+                            root: LexerTokenPayloadStub::stub(Add),
+                            args: vec![
+                                Node::leaf(StringStub::stub("a")),
+                                Node::leaf(StringStub::stub("b")),
+                            ],
+                        }],
+                    },
+                ],
+                scopes: vec![],
+            }],
+        };
+
+        assert_eq!(actual, expected);
     }
 
     #[test]

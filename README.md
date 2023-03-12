@@ -80,9 +80,9 @@ Finally solve some of [Graydon Hoare's problems](https://graydon2.dreamwidth.org
 
 ```text
 lexer
-  parser
-  generator (deprecated)
-  specializer
+parser
+generator (deprecated)
+specializer
 simplifier
 exporter
   llvm
