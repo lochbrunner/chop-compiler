@@ -1,0 +1,6 @@
+#!/usr/bin/env ichop
+
+a := "abc"
+
+
+stdout "abc"

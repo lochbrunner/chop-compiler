@@ -1,0 +1,10 @@
+#!/usr/bin/env ichop
+
+x := 5
+
+y := match x {
+    3 => 1
+    5 => 2
+}
+
+stdout y

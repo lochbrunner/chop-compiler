@@ -51,13 +51,14 @@ cchop <code filename> -o <output filename>
 1. [Objects](./milestones/6)
 1. [Functions](./milestones/7)
 1. [Code generation from intermediate steps](./milestones/8)
-1. Control flow
-1. Enums
-1. Arrays and Strings
+1. [Control flow](./milestones/9)
+1. [Arrays and Strings](./milestones/10)
+1. [Meta Programming](./milestones/11)
+1. [Imports and Exports](./milestones/12)
 1. Heap
-1. Meta Programming
 1. Hooks
-1. Imports and Exports
+1. Enums
+1. Iterators and Loops
 1. Caching
 1. Borrowing (and checks)
 1. FFI (foreign function interface)

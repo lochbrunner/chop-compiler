@@ -1,0 +1,9 @@
+#!/usr/bin/env ichop
+
+
+while true {
+    stdout 3
+    break
+}
+
+stdout 5

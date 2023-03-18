@@ -1,0 +1,5 @@
+#!/usr/bin/env ichop
+
+max (a, b) := if a > b a else b
+
+stdout min 1, 3

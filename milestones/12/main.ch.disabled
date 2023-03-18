@@ -1,0 +1,5 @@
+#!/usr/bin/env ichop
+
+import ./lib.ch
+
+stdout lib.foo(3, 5)

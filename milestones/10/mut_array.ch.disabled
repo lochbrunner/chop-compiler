@@ -1,0 +1,7 @@
+#!/usr/bin/env ichop
+
+mut a := int[10]
+
+a[3] <- 5
+
+stdout a[3]

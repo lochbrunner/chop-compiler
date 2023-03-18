@@ -1,0 +1,9 @@
+#!/usr/bin/env ichop
+
+a := {
+    a: i32 :+ 12
+    b: f32 :+ 12.3
+}
+
+stdout $a.members[0].name
+stdout $a.members[0].type.name

@@ -10,12 +10,12 @@ B := {
     y :+ 14
 }
 
-add := (a,b) => {
+add := (a, b) => {
     x :+ a.x + b.x
     y :+ a.y + b.y
 }
 
-sum := add(A,B)
+sum := add(A, B)
 
 stdout sum.x
 stdout sum.y
