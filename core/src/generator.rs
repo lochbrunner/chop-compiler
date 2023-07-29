@@ -12,7 +12,7 @@ fn generate_sparse_node(statement: Node<SparseToken>) -> Result<Node<SparseToken
             args: vec![statement.args[0].clone()],
         }),
         AstTokenPayload::Symbol(_) => Ok(statement), // Function Call
-        AstTokenPayload::DefineLocal(_) => Ok(statement),
+        AstTokenPayload::Define(_, _) => Ok(statement),
         _ => Err(CompilerError {
             location: statement.root.loc.clone(),
             msg: format!(
@@ -37,7 +37,7 @@ pub fn generate(ast: Scope<DenseToken>) -> Result<Scope<DenseToken>, CompilerErr
                 args: vec![statement.args[0].clone()],
             }),
             AstTokenPayload::Symbol(_) => Ok(statement), // Function Call
-            AstTokenPayload::DefineLocal(_) => Ok(statement),
+            AstTokenPayload::Define(_, _) => Ok(statement),
             _ => Err(CompilerError {
                 location: statement.root.loc.clone(),
                 msg: format!(

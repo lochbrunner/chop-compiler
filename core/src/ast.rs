@@ -1,5 +1,6 @@
-use crate::declaration::Type;
+use crate::declaration::{Signature, Type, Visibility};
 use crate::error::{Locatable, Location};
+use std::collections::HashMap;
 use std::fmt;
 use std::rc::Rc;
 
@@ -74,6 +75,13 @@ pub struct FloatProvider {
 //     // }
 // }
 
+#[derive(Debug, Default, Clone, PartialEq)]
+pub struct Struct {
+    // pub fields: HashMap<String, AstTokenPayload>, // lazy evaluation
+    pub fields: HashMap<String, Signature<Option<Type>>>, // eager evaluation
+    pub local_fields: HashMap<String, Signature<Option<Type>>>, // For testing
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum AstTokenPayload {
     // Comment,
@@ -81,9 +89,9 @@ pub enum AstTokenPayload {
     // Literals
     Integer(IntegerProvider),
     Float(FloatProvider),
+    Struct(Struct),
     // Statements
-    DefineLocal(Option<Type>),  // :=
-    DefinePublic(Option<Type>), // :+
+    Define(Option<Type>, Visibility),
     // Declare,      // :
     Scope,
     Cast, // as
@@ -97,6 +105,7 @@ pub enum AstTokenPayload {
     Add,       // +
     Subtract,  // -
     Remainder, // %
+    FieldRef,  // .
 }
 
 impl AstTokenPayload {
@@ -107,7 +116,8 @@ impl AstTokenPayload {
                 Ok(AstTokenPayload::Integer(IntegerProvider { content }))
             }
             TokenPayload::Float(content) => Ok(AstTokenPayload::Float(FloatProvider { content })),
-            TokenPayload::DefineLocal => Ok(AstTokenPayload::DefineLocal(None)),
+            TokenPayload::DefineLocal => Ok(AstTokenPayload::Define(None, Visibility::Local)),
+            TokenPayload::DefinePublic => Ok(AstTokenPayload::Define(None, Visibility::Public)),
             TokenPayload::Cast => Ok(AstTokenPayload::Cast),
             TokenPayload::Pipe => Ok(AstTokenPayload::Pipe),
             TokenPayload::Multiply => Ok(AstTokenPayload::Multiply),
@@ -115,6 +125,7 @@ impl AstTokenPayload {
             TokenPayload::Add => Ok(AstTokenPayload::Add),
             TokenPayload::Subtract => Ok(AstTokenPayload::Subtract),
             TokenPayload::Remainder => Ok(AstTokenPayload::Remainder),
+            TokenPayload::Dot => Ok(AstTokenPayload::FieldRef),
             _ => Err(format!("[A1] {:?} is not a valid type for Ast.", prev)),
         }
     }

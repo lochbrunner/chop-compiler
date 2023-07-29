@@ -1,5 +1,5 @@
 use crate::ast::{AstTokenPayload, DenseToken, Node, Scope, SparseToken};
-use crate::declaration::{Context, Declaration, Signature, Type};
+use crate::declaration::{Context, Declaration, Signature, Type, Visibility};
 use crate::error::{Locatable, Location};
 use crate::CompilerError;
 
@@ -84,7 +84,7 @@ fn specialize_declaration(
         let args = vec![name, value];
         Ok(DenseNode {
             root: DenseToken {
-                payload: AstTokenPayload::DefineLocal(Some(dtype)),
+                payload: AstTokenPayload::Define(Some(dtype), Visibility::Local),
                 loc,
                 return_type: Type::Void,
             },
@@ -233,13 +233,14 @@ fn specialize_node<'a>(
         args,
     } = node;
     match &payload {
-        AstTokenPayload::DefineLocal(_) => specialize_declaration(args, loc, context),
+        AstTokenPayload::Define(_, _) => specialize_declaration(args, loc, context),
         AstTokenPayload::Cast => specialize_cast(args, loc, context),
         AstTokenPayload::Add
         | AstTokenPayload::Subtract
         | AstTokenPayload::Multiply
         | AstTokenPayload::Divide
         | AstTokenPayload::Remainder => specialize_binary_op(payload, args, loc, expected, context),
+        AstTokenPayload::FieldRef => specialize_binary_op(payload, args, loc, expected, context),
         AstTokenPayload::Symbol(ident) => specialize_symbol(ident, args, loc, expected, context),
         // What are the expected types
         AstTokenPayload::Integer(_) => {
@@ -274,6 +275,18 @@ fn specialize_node<'a>(
                     payload,
                     loc,
                     return_type: r_type,
+                },
+                args,
+            })
+        }
+        AstTokenPayload::Struct(obj) => {
+            let args = vec![];
+            let obj = obj.clone();
+            Ok(DenseNode {
+                root: DenseToken {
+                    payload,
+                    loc,
+                    return_type: Type::Struct(obj),
                 },
                 args,
             })
@@ -340,6 +353,7 @@ mod specs {
             declarations: hashmap! {
                 "stdout".to_string() => Declaration::full_template_statement(1),
             },
+            lower: None,
         };
         let dense = specialize_node(&mut context, sparse, None);
         assert_ok!(dense);
@@ -350,7 +364,7 @@ mod specs {
     fn declaration_cast() {
         // b: i8 := 5
         let sparse = Node {
-            root: AstTokenPayloadStub::stub(DefineLocal(None)),
+            root: AstTokenPayloadStub::stub(Define(None, Visibility::Local)),
             args: vec![
                 Node::leaf(StringStub::stub("b")),
                 Node::leaf(StringStub::stub("i8")),
@@ -365,7 +379,7 @@ mod specs {
 
         let expected = Node {
             root: DenseToken {
-                payload: DefineLocal(Some(Type::Int8)),
+                payload: Define(Some(Type::Int8), Visibility::Local),
                 return_type: Type::Void,
                 loc: Location::default(),
             },
@@ -389,7 +403,7 @@ mod specs {
     fn explicit_cast() {
         // b := 5 as i8
         let sparse = Node {
-            root: AstTokenPayloadStub::stub(DefineLocal(None)),
+            root: AstTokenPayloadStub::stub(Define(None, Visibility::Local)),
             args: vec![
                 Node::leaf(StringStub::stub("b")),
                 Node {
@@ -406,6 +420,7 @@ mod specs {
             declarations: hashmap! {
                 "i8".to_string() => Declaration::variable(Type::Type),
             },
+            lower: None,
         };
         let dense = specialize_node(&mut context, sparse, None);
         assert_ok!(dense);
@@ -413,7 +428,7 @@ mod specs {
 
         let expected = Node {
             root: DenseToken {
-                payload: DefineLocal(Some(Type::Int8)),
+                payload: Define(Some(Type::Int8), Visibility::Local),
                 return_type: Type::Void,
                 loc: Location::default(),
             },
@@ -454,7 +469,7 @@ mod specs {
         // b := a as i8
         let sparse = vec![
             Node {
-                root: AstTokenPayloadStub::stub(DefineLocal(None)),
+                root: AstTokenPayloadStub::stub(Define(None, Visibility::Local)),
                 args: vec![
                     Node::leaf(StringStub::stub("a")),
                     Node {
@@ -467,7 +482,7 @@ mod specs {
                 ],
             },
             Node {
-                root: AstTokenPayloadStub::stub(DefineLocal(None)),
+                root: AstTokenPayloadStub::stub(Define(None, Visibility::Local)),
                 args: vec![
                     Node::leaf(StringStub::stub("b")),
                     Node {
@@ -486,6 +501,7 @@ mod specs {
                 "a".to_string() => Declaration::variable(Type::Int8),
                 "i8".to_string() => Declaration::variable(Type::Type),
             },
+            lower: None,
         };
 
         let dense = sparse
@@ -498,7 +514,7 @@ mod specs {
         let expected = [
             Node {
                 root: DenseToken {
-                    payload: DefineLocal(Some(Type::Int8)),
+                    payload: Define(Some(Type::Int8), Visibility::Local),
                     return_type: Type::Void,
                     loc: Location::default(),
                 },
@@ -531,7 +547,7 @@ mod specs {
             },
             Node {
                 root: DenseToken {
-                    payload: DefineLocal(Some(Type::Int8)),
+                    payload: Define(Some(Type::Int8), Visibility::Local),
                     return_type: Type::Void,
                     loc: Location::default(),
                 },
@@ -572,7 +588,7 @@ mod specs {
         // b: i8 := a as i8 + 5
 
         let sparse = Node {
-            root: AstTokenPayloadStub::stub(DefineLocal(None)),
+            root: AstTokenPayloadStub::stub(Define(None, Visibility::Local)),
             args: vec![
                 Node::leaf(StringStub::stub("b")),
                 Node::leaf(StringStub::stub("i8")),
@@ -601,6 +617,7 @@ mod specs {
                 "a".to_string() => Declaration::variable(Type::Int8),
                 "i8".to_string() => Declaration::variable(Type::Type),
             },
+            lower: None,
         };
         let dense = specialize_node(&mut context, sparse, None);
         assert_ok!(dense);
@@ -608,7 +625,7 @@ mod specs {
 
         let expected = Node {
             root: DenseToken {
-                payload: DefineLocal(Some(Type::Int8)),
+                payload: Define(Some(Type::Int8), Visibility::Local),
                 return_type: Type::Void,
                 loc: Location::default(),
             },

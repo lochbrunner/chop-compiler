@@ -448,6 +448,7 @@ pub fn evaluate(code: &[ByteCode], writer: &mut dyn Write) -> Result<(), String>
                 Type::UInt8 => register.push(StackItem::UInt8(0)),
                 Type::USize => register.push(StackItem::USize(0)),
                 Type::Void | Type::Type => (),
+                Type::Struct(_schema) => unimplemented!(),
             }
         }
     }

@@ -213,6 +213,7 @@ impl ToLLVM for Type {
             Type::Float64 => "double",
             Type::Void => "void",
             Type::Type => panic!("Type can not be used as an variable"),
+            Type::Struct(_schema) => unimplemented!(),
         }
     }
     fn align(&self) -> u8 {

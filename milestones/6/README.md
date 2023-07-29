@@ -33,4 +33,4 @@ int main() {
 }
 ```
 
-Difference: Chop has no variable `a` in outer scope.
+Difference: Chop has no variable `a` in the outer scope.

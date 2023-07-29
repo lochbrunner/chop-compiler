@@ -1,6 +1,6 @@
 #!/usr/bin/env ichop
 
-mut a := int[10]
+mut a := i32[10]
 
 a[3] <- 5
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env ichop
 
-a := int[10]
+a := i32[10]
 
 stdout a[3]

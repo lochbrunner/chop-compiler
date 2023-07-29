@@ -33,7 +33,8 @@
                 "args": [
                     "test",
                     "--no-run",
-                    "--lib=core",
+                    "--lib",
+                    "core",
                     "--package=core",
                 ],
                 "filter": {
@@ -42,13 +43,13 @@
                 }
             },
             "args": [
-                "exporter::bytecode::specs::milestone_5_main",
+                "parser::specs::milestone_6_scope",
                 "--nocapture",
             ],
             "cwd": "${workspaceFolder}",
             "sourceLanguages": [
                 "rust"
             ]
-        }
+        },
     ]
 }

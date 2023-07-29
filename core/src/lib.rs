@@ -171,12 +171,13 @@ mod e2e {
         let mut context = Context {
             declarations: hashmap! {
                 // "stdout".to_string() => Declaration::full_template_statement(1),
-                "stdout".to_string() => Declaration::function(Void, vec![Int8], true),
+                "stdout".to_string() => Declaration::function(Void, vec![Int8], true, declaration::Visibility::Local),
                 "max".to_string() => Declaration::full_template_function(2),
                 "min".to_string() => Declaration::full_template_function(2),
                 "i8".to_string() => Declaration::variable(Type),
                 "i32".to_string() => Declaration::variable(Type),
             },
+            lower: None,
         };
 
         let tokens = lexer::lex(code).unwrap();
@@ -231,12 +232,13 @@ mod e2e {
         let mut context = Context {
             declarations: hashmap! {
                 // "stdout".to_string() => Declaration::full_template_statement(1),
-                "stdout".to_string() => Declaration::function(Void, vec![Int8], true),
+                "stdout".to_string() => Declaration::function(Void, vec![Int8], true, declaration::Visibility::Local),
                 "max".to_string() => Declaration::full_template_function(2),
                 "min".to_string() => Declaration::full_template_function(2),
                 "i8".to_string() => Declaration::variable(Type),
                 "i32".to_string() => Declaration::variable(Type),
             },
+            lower: None,
         };
         let tokens = lexer::lex(code).unwrap();
         let sparse_ast = parser::parse(&mut context, &tokens).unwrap();
@@ -278,12 +280,13 @@ mod e2e {
 
         let mut context = Context {
             declarations: hashmap! {
-                "stdout".to_string() => Declaration::function(Void, vec![UInt8], true),
+                "stdout".to_string() => Declaration::function(Void, vec![UInt8], true, declaration::Visibility::Local),
                 "max".to_string() => Declaration::full_template_function(2),
                 "min".to_string() => Declaration::full_template_function(2),
                 "u8".to_string() => Declaration::variable(Type),
                 "i32".to_string() => Declaration::variable(Type),
             },
+            lower: None,
         };
         let tokens = lexer::lex(code).unwrap();
         let sparse_ast = parser::parse(&mut context, &tokens).unwrap();

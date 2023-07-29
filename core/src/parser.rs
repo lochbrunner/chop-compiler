@@ -14,6 +14,7 @@ pub enum Precedence {
     PSum,
     PProduct,
     PCast,
+    PNestedRef,
 }
 
 #[derive(Debug)]
@@ -46,6 +47,20 @@ impl Symbol {
         match self {
             Self::Raw(token) => &token.loc,
             Self::Finished(node) => &node.root.loc,
+        }
+    }
+
+    pub fn is_empty_struct(&self) -> bool {
+        match self {
+            Self::Raw(_) => false,
+            Self::Finished(node) => {
+                match node.root.payload {
+                    AstTokenPayload::Struct(ref s) => {
+                        s.fields.is_empty()
+                    },
+                    _ => false
+                }
+            },
         }
     }
 }
@@ -270,27 +285,38 @@ fn create_statement<'a>(
             args,
         };
         if op.is_statement {
-            if node.root.payload == AstTokenPayload::DefineLocal(None) {
-                // TODO: First attempt only
-                // Get ident
-                let first_token = &node.args.get(0).unwrap().root.payload;
-                // Get Type if available, else use default type
-                let type_token = if node.args.len() == 3 {
-                    Type::from_sparse_token(&node.args.get(1).unwrap().root)
-                } else {
-                    Type::Int32
-                };
-                if let AstTokenPayload::Symbol(ref ident) = first_token {
-                    context.declarations.insert(
-                        ident.clone(),
-                        Declaration::function(type_token, vec![], false),
-                    );
-                } else {
-                    return Err(CompilerError::global(&format!(
-                        "Left of definition must be an identifier, not {:?}",
-                        node.args
-                    )));
+            match &node.root.payload {
+                AstTokenPayload::Define(_, visibility) => {
+                    // TODO: First attempt only
+                    // Get ident
+                    let first_token = &node.args.get(0).unwrap().root.payload;
+                    // Get Type if available, else use default type
+                    let type_token = if node.args.len() == 3 {
+                        Type::from_sparse_token(&node.args.get(1).unwrap().root)
+                    } else if node.args.len() == 2 {
+                        let rvalue = &node.args.get(1).unwrap().root;
+                        match &rvalue.payload {
+                            ast::AstTokenPayload::Struct(obj) => Type::Struct(obj.clone()),
+                            ast::AstTokenPayload::Integer(_) => Type::Int32,
+                            ast::AstTokenPayload::Float(_) => Type::Float32,
+                            _ => Type::Int32,
+                        }
+                    } else {
+                        Type::Int32
+                    };
+                    if let AstTokenPayload::Symbol(ref ident) = first_token {
+                        context.declarations.insert(
+                            ident.clone(),
+                            Declaration::function(type_token, vec![], false, visibility.clone()),
+                        );
+                    } else {
+                        return Err(CompilerError::global(&format!(
+                            "Left of definition must be an identifier, not {:?}",
+                            node.args
+                        )));
+                    }
                 }
+                _ => (),
             }
             return Ok(node);
         } else {
@@ -327,6 +353,39 @@ impl ParserState {
     }
 }
 
+fn create_local_context<'a>(
+    stack: &ParseStack,
+    current_context: &Context,
+) -> Result<Context<'a>, String> {
+    if let Some(symbol) = stack.symbol.last() {
+        match symbol {
+            Symbol::Finished(finished) => match finished.root.payload {
+                ast::AstTokenPayload::Struct(ref obj) => Ok(Context::from_struct(obj)),
+                _ => Err(format!("[P9.1] Can only access fields of structs!")),
+            },
+            Symbol::Raw(token) => match token.token {
+                TokenPayload::Ident(ref ident) => {
+                    if let Some(decl) = current_context.declarations.get(ident) {
+                        if let Some(ref dtype) = decl.signature.return_type {
+                            match dtype {
+                                Type::Struct(decl) => Ok(Context::from_struct(decl)),
+                                _ => Err(format!("[P9.2] Strange error occurred!")),
+                            }
+                        } else {
+                            Err(format!("[P9.6] Object does not have a return type!"))
+                        }
+                    } else {
+                        Err(format!("[P9.5] Can not find object of name \"{}\"!", ident))
+                    }
+                }
+                _ => Err(format!("[P9.4] Expected object found something else!")),
+            },
+        }
+    } else {
+        Err(format!("[P9.3] No object to access the fields to!"))
+    }
+}
+
 /// Returns a single statement using the state as for generator-like behavior.
 /// Turns a slice of tokens into an statement.
 /// Using [Shunting-yard algorithm](https://en.wikipedia.org/wiki/Shunting-yard_algorithm#/media/File:Shunting_yard.svg)
@@ -334,7 +393,7 @@ fn parse_impl(
     state: ParserState,
     context: &mut Context,
     tokens: &[Token],
-) -> Result<(ast::Scope<SparseToken>, usize), CompilerError> {
+) -> Result<(ast::Scope<SparseToken>, usize, ast::Struct), CompilerError> {
     let ParserState {
         mut stack,
         token_start,
@@ -357,7 +416,7 @@ fn parse_impl(
             }),
             TokenPayload::Delimiter => {
                 if is_astifyable(&stack) {
-                    if let Err(msg) = astify(context, Precedence::POpening, &mut stack) {
+                    if let Err(msg) = astify(&context, Precedence::POpening, &mut stack) {
                         return Err(CompilerError::from_token::<Token>(
                             token,
                             format!("[P3] Error on astify: {}", msg),
@@ -366,10 +425,49 @@ fn parse_impl(
                 }
             }
             TokenPayload::Dot => {
-                unimplemented!();
+                let context = create_local_context(&stack, &context)
+                    .map_err(|msg| CompilerError::from_token::<Token>(token, msg))?;
+                stack.infix.push(Infix {
+                    token: token.clone(),
+                    precedence: Precedence::PNestedRef,
+                    req_args_count: 2,
+                    is_statement: false,
+                    optional_type: false,
+                });
+                let token = &tokens[i];
+                match &token.token {
+                    TokenPayload::Ident(ident) => match context.declarations.get(ident) {
+                        None => {
+                            return Err(CompilerError::from_token::<Token>(
+                                token,
+                                format!("[P8.2] Field {} can not be found", ident),
+                            ))
+                        }
+                        Some(declaration) => {
+                            if declaration.req_args_count() == 0 {
+                                stack.symbol.push(Symbol::Raw(token.clone()));
+                            } else {
+                                stack.infix.push(Infix {
+                                    token: token.clone(),
+                                    precedence: Precedence::PCall,
+                                    req_args_count: declaration.req_args_count(),
+                                    is_statement: declaration.is_statement,
+                                    optional_type: false,
+                                });
+                            }
+                        }
+                    },
+                    _ => {
+                        return Err(CompilerError::from_token::<Token>(
+                            token,
+                            format!("[P8.1] Access to field not possible: {}", token.token),
+                        ))
+                    }
+                }
+                i += 1;
             }
             TokenPayload::ParenthesesR => {
-                if let Err(msg) = astify(context, Precedence::POpening, &mut stack) {
+                if let Err(msg) = astify(&context, Precedence::POpening, &mut stack) {
                     return Err(CompilerError::from_token::<Token>(
                         token,
                         format!("[P4] Error on astify: {}", msg),
@@ -382,24 +480,30 @@ fn parse_impl(
                     let statement = create_statement(context, &mut stack)?;
                     scope.statements.push(ast::Statement::InScope(statement));
                 }
-                let (inner_scope, new_i) = parse_impl(
+                let (inner_scope, new_i, export) = parse_impl(
                     ParserState {
                         token_start: i,
                         stack: ParseStack::new(),
-                        // exported: Vec::new(),
                     },
-                    context,
+                    &mut context.up(),
                     tokens,
                 )?;
-                i = new_i;
+                i = new_i - 1;
                 scope.statements.push(ast::Statement::Nested(inner_scope));
+                stack
+                    .symbol
+                    .push(Symbol::Finished(ast::Node::leaf(ast::SparseToken {
+                        payload: AstTokenPayload::Struct(export),
+                        return_type: Rc::new(&|_| None),
+                        loc: token.loc.clone(),
+                    })));
             }
             TokenPayload::BraceR => {
                 if stack.is_completable() {
                     let statement = create_statement(context, &mut stack)?;
                     scope.statements.push(ast::Statement::InScope(statement));
                 }
-                return Ok((scope, i + 1));
+                return Ok((scope, i + 1, context.gen_struct()));
             }
             TokenPayload::Ident(ident) => {
                 if expect_function_as_variable {
@@ -409,9 +513,12 @@ fn parse_impl(
                         let statement = create_statement(context, &mut stack)?;
                         scope.statements.push(ast::Statement::InScope(statement));
                     }
-                    match context.declarations.get(ident) {
+                    match context.try_get_declaration(ident) {
                         None => {
-                            if !stack.is_empty() {
+                            if stack.is_empty() {
+                                // New declaration?
+                                stack.symbol.push(Symbol::Raw(token.clone()));
+                            } else {
                                 // Expecting a type?
                                 let expect_type = stack
                                     .last_symbol_is(&TokenPayload::TypeDeclaration)
@@ -431,9 +538,6 @@ fn parse_impl(
                                         msg, ident, stack.symbol, available
                                     ),
                                 ));
-                            } else {
-                                // New declaration?
-                                stack.symbol.push(Symbol::Raw(token.clone()));
                             }
                         }
                         Some(declaration) => {
@@ -462,7 +566,7 @@ fn parse_impl(
                     stack.symbol.push(Symbol::Raw(token.clone()));
                 }
             }
-            TokenPayload::DefineLocal => {
+            TokenPayload::DefineLocal | TokenPayload::DefinePublic => {
                 if stack.symbol.is_empty() {
                     return Err(CompilerError {
                         location: token.loc.clone(),
@@ -478,13 +582,12 @@ fn parse_impl(
                     });
                 }
             }
-            TokenPayload::DefinePublic => {}
             TokenPayload::TypeDeclaration => {
                 stack.symbol.push(Symbol::Raw(token.clone()));
             }
             TokenPayload::Pipe => {
                 if stack.check_precedence(&Precedence::Pipe) {
-                    if let Err(msg) = astify(context, Precedence::Pipe, &mut stack) {
+                    if let Err(msg) = astify(&context, Precedence::Pipe, &mut stack) {
                         return Err(CompilerError {
                             location: token.loc.clone(),
                             msg: format!("Error on astify: {}", msg),
@@ -502,7 +605,7 @@ fn parse_impl(
             }
             TokenPayload::Add | TokenPayload::Subtract => {
                 if stack.check_precedence(&Precedence::PSum) {
-                    if let Err(msg) = astify(context, Precedence::PSum, &mut stack) {
+                    if let Err(msg) = astify(&context, Precedence::PSum, &mut stack) {
                         return Err(CompilerError {
                             location: token.loc.clone(),
                             msg: format!("Error on astify: {}", msg),
@@ -530,7 +633,7 @@ fn parse_impl(
             }
             TokenPayload::Cast => {
                 if stack.check_precedence(&Precedence::PCast) {
-                    if let Err(msg) = astify(context, Precedence::PCast, &mut stack) {
+                    if let Err(msg) = astify(&context, Precedence::PCast, &mut stack) {
                         return Err(CompilerError {
                             location: token.loc.clone(),
                             msg: format!("Error on astify: {}", msg),
@@ -547,15 +650,19 @@ fn parse_impl(
             }
         }
     }
-    if stack.infix.is_empty() && stack.symbol.is_empty() {
-        return Ok((scope, i));
+    // Dirty hack: Ignore single local struct
+    if stack.infix.is_empty() && stack.symbol.len() == 1 && stack.symbol[0].is_empty_struct() {
+        return Ok((scope, i, context.gen_struct()));
+    }
+    else if stack.infix.is_empty() && stack.symbol.is_empty() {
+        return Ok((scope, i, context.gen_struct()));
     } else if stack.is_completable() {
         let statement = create_statement(context, &mut stack)?;
         scope.statements.push(ast::Statement::InScope(statement));
-        return Ok((scope, i));
+        return Ok((scope, i, context.gen_struct()));
     } else {
         Err(CompilerError::global(&format!(
-            "[P7] Parser could not process all tokens. Remaining are",
+            "[P7] Parser could not process all tokens. Remaining are {:?}", stack
         )))
     }
 }
@@ -578,17 +685,18 @@ pub fn parse(
                         .join(", ")
                 ),
             })
-            .map(|(s, _)| s),
-        Err(_) => parse_impl(ParserState::new(), context, &tokens).map(|(s, _)| s),
+            .map(|(s, _, _)| s),
+        Err(_) => parse_impl(ParserState::new(), context, &tokens).map(|(s, _, _)| s),
     }
 }
 
 #[cfg(test)]
 mod specs {
-    use crate::ast::Statement;
+    use crate::{ast::Statement, declaration};
 
     use super::*;
     use ast::{IntegerStub, LexerTokenPayloadStub, Node, Scope, StringStub};
+    use declaration::Visibility;
     use TokenPayload::*;
     type SparseNode = Node<SparseToken>;
 
@@ -724,12 +832,13 @@ mod specs {
 
         let mut context = Context {
             declarations: hashmap! {
-                "stdout".to_owned() => Declaration::function(Type::Void, vec![Type::Int32], true)
+                "stdout".to_owned() => Declaration::function(Type::Void, vec![Type::Int32], true, Visibility::Local)
             },
+            lower: None,
         };
         let actual = parse_impl(ParserState::new(), &mut context, &create_stub(&tokens));
         assert_ok!(actual);
-        let (actual, _) = actual.unwrap();
+        let (actual, _, _) = actual.unwrap();
         assert!(actual.statements.len() == 1);
 
         let expected = ast::Node {
@@ -754,13 +863,14 @@ mod specs {
 
         let mut context = Context {
             declarations: hashmap! {
-                "stdout".to_owned() => Declaration::function(Type::Void, vec![Type::Int32], true)
+                "stdout".to_owned() => Declaration::function(Type::Void, vec![Type::Int32], true,Visibility::Local)
             },
+            lower: None,
         };
 
         let actual = parse_impl(ParserState::new(), &mut context, &create_stub(&tokens));
         assert_ok!(actual);
-        let (actual, _) = actual.unwrap();
+        let (actual, _, _) = actual.unwrap();
         assert!(actual.statements.len() == 1);
 
         let expected = ast::Node {
@@ -780,12 +890,13 @@ mod specs {
 
         let mut context = Context {
             declarations: hashmap! {
-                "stdout".to_owned() => Declaration::function(Type::Void, vec![Type::Int32], true)
+                "stdout".to_owned() => Declaration::function(Type::Void, vec![Type::Int32], true,Visibility::Local)
             },
+            lower: None,
         };
         let actual = parse_impl(ParserState::new(), &mut context, &create_stub(&tokens));
         assert_ok!(actual);
-        let (actual, _) = actual.unwrap();
+        let (actual, _, _) = actual.unwrap();
         assert!(actual.statements.len() == 1);
 
         let expected = ast::Node {
@@ -805,13 +916,14 @@ mod specs {
 
         let mut context = Context {
             declarations: hashmap! {
-                "stdout".to_owned() => Declaration::function(Type::Void, vec![Type::Int32], true)
+                "stdout".to_owned() => Declaration::function(Type::Void, vec![Type::Int32], true, Visibility::Local)
             },
+            lower: None,
         };
 
         let actual = parse_impl(ParserState::new(), &mut context, &create_stub(&tokens));
         assert_ok!(actual);
-        let (actual, _) = actual.unwrap();
+        let (actual, _, _) = actual.unwrap();
         assert!(actual.statements.len() == 1);
 
         let expected = SparseNode {
@@ -842,13 +954,14 @@ mod specs {
 
         let mut context = Context {
             declarations: hashmap! {
-                "stdout".to_owned() => Declaration::function(Type::Void, vec![Type::Int32], true)
+                "stdout".to_owned() => Declaration::function(Type::Void, vec![Type::Int32], true, Visibility::Local)
             },
+            lower: None,
         };
 
         let actual = parse_impl(ParserState::new(), &mut context, &create_stub(&tokens));
         assert_ok!(actual);
-        let (actual, _) = actual.unwrap();
+        let (actual, _, _) = actual.unwrap();
         assert!(actual.statements.len() == 1);
 
         let expected = SparseNode {
@@ -887,13 +1000,14 @@ mod specs {
 
         let mut context = Context {
             declarations: hashmap! {
-                "stdout".to_owned() => Declaration::function(Type::Void, vec![Type::Int32], true)
+                "stdout".to_owned() => Declaration::function(Type::Void, vec![Type::Int32], true, Visibility::Local)
             },
+            lower: None,
         };
 
         let actual = parse_impl(ParserState::new(), &mut context, &create_stub(&tokens));
         assert_ok!(actual);
-        let (actual, _) = actual.unwrap();
+        let (actual, _, _) = actual.unwrap();
         assert!(actual.statements.len() == 1);
 
         let expected = SparseNode {
@@ -931,14 +1045,15 @@ mod specs {
 
         let mut context = Context {
             declarations: hashmap! {
-                "stdout".to_string() => Declaration::function(Type::Void, vec![Type::Int32], true),
-                "max".to_string() => Declaration::function(Type::Void, vec![Type::Int32,Type::Int32], false)
+                "stdout".to_string() => Declaration::function(Type::Void, vec![Type::Int32], true, Visibility::Local),
+                "max".to_string() => Declaration::function(Type::Void, vec![Type::Int32,Type::Int32], false, Visibility::Local)
             },
+            lower: None,
         };
 
         let actual = parse_impl(ParserState::new(), &mut context, &create_stub(&tokens));
         assert_ok!(actual);
-        let (actual, _) = actual.unwrap();
+        let (actual, _, _) = actual.unwrap();
         assert!(actual.statements.len() == 1);
 
         let expected = SparseNode {
@@ -978,14 +1093,15 @@ mod specs {
 
         let mut context = Context {
             declarations: hashmap! {
-                "stdout".to_owned() => Declaration::function(Type::Void, vec![Type::Int32], true),
-                "max".to_owned() => Declaration::function(Type::Void, vec![Type::Int32,Type::Int32], false)
+                "stdout".to_owned() => Declaration::function(Type::Void, vec![Type::Int32], true, Visibility::Local),
+                "max".to_owned() => Declaration::function(Type::Void, vec![Type::Int32,Type::Int32], false, Visibility::Local)
             },
+            lower: None,
         };
 
         let actual = parse_impl(ParserState::new(), &mut context, &create_stub(&tokens));
         assert_ok!(actual);
-        let (actual, _) = actual.unwrap();
+        let (actual, _, _) = actual.unwrap();
         assert!(actual.statements.len() == 1);
 
         let expected = SparseNode {
@@ -1044,7 +1160,7 @@ mod specs {
 
         let actual = parse_impl(ParserState::new(), &mut context, &create_stub(&tokens));
         assert_ok!(actual);
-        let (actual, _) = actual.unwrap();
+        let (actual, _, _) = actual.unwrap();
         assert!(actual.statements.len() == 1);
 
         let expected: Node<SparseToken> = Node {
@@ -1080,7 +1196,7 @@ mod specs {
 
         let actual = parse_impl(ParserState::new(), &mut context, &create_stub(&tokens));
         assert_ok!(actual);
-        let (actual, _) = actual.unwrap();
+        let (actual, _, _) = actual.unwrap();
         assert!(actual.statements.len() == 1);
 
         let expected = SparseNode {
@@ -1094,7 +1210,8 @@ mod specs {
         // Declaration
         assert!(context.declarations.get("a").is_some());
         let actual_declaration = context.declarations.get("a").unwrap();
-        let expected_declaration = Declaration::function(Type::Int32, vec![], false);
+        let expected_declaration =
+            Declaration::function(Type::Int32, vec![], false, Visibility::Local);
 
         assert_eq!(actual_declaration, &expected_declaration);
     }
@@ -1113,7 +1230,7 @@ mod specs {
         let mut context = Context::new();
         let actual = parse_impl(ParserState::new(), &mut context, &create_stub(&tokens));
         assert_ok!(actual);
-        let (actual, _) = actual.unwrap();
+        let (actual, _, scope) = actual.unwrap();
         assert!(actual.statements.len() == 1);
 
         let expected = SparseNode {
@@ -1132,9 +1249,8 @@ mod specs {
         assert_eq!(actual.statements[0], Statement::InScope(expected));
         // Declaration
         assert!(context.declarations.get("a").is_some());
-        let actual_declaration = context.declarations.get("a").unwrap();
-        let expected_declaration = Declaration::function(Type::Int32, vec![], false);
-
+        let actual_declaration = scope.local_fields.get("a").unwrap();
+        let expected_declaration = declaration::Signature {return_type: Some(Type::Int32), args: vec![]}; // Declaration::function(Type::Int32, vec![], false, Visibility::Local);
         assert_eq!(actual_declaration, &expected_declaration);
     }
 
@@ -1170,11 +1286,12 @@ mod specs {
                 "stdout".to_string() => Declaration::full_template_statement(1),
                 "max".to_string() => Declaration::full_template_function(2),
             },
+            lower: None,
         };
 
         let actual = parse_impl(ParserState::new(), &mut context, &create_stub(&tokens));
         assert_ok!(actual);
-        let (actual, _) = actual.unwrap();
+        let (actual, _, _) = actual.unwrap();
 
         let expected = vec![
             Statement::InScope(Node {
@@ -1253,11 +1370,12 @@ mod specs {
                 "stdout".to_string() => Declaration::full_template_statement(1),
                 "i16".to_string() => Declaration::variable(Type::Type),
             },
+            lower: None,
         };
 
         let actual = parse_impl(ParserState::new(), &mut context, &create_stub(&tokens));
         assert_ok!(actual);
-        let (actual, _) = actual.unwrap();
+        let (actual, _, _) = actual.unwrap();
 
         let expected = [
             Statement::InScope(Node {
@@ -1324,11 +1442,12 @@ mod specs {
                 "i8".to_string() => Declaration::variable(Type::Type),
                 "i32".to_string() => Declaration::variable(Type::Type),
             },
+            lower: None,
         };
 
         let actual = parse_impl(ParserState::new(), &mut context, &create_stub(&tokens));
         assert_ok!(actual);
-        let (actual, _) = actual.unwrap();
+        let (actual, _, _) = actual.unwrap();
 
         let expected: Vec<_> = vec![
             Node {
@@ -1406,11 +1525,12 @@ mod specs {
             declarations: hashmap! {
                 "i8".to_string() => Declaration::variable(Type::Type),
             },
+            lower: None,
         };
 
         let actual = parse_impl(ParserState::new(), &mut context, &create_stub(&tokens));
         assert_ok!(actual);
-        let (actual, _) = actual.unwrap();
+        let (actual, _, _) = actual.unwrap();
 
         let expected: Node<SparseToken> = Node {
             root: LexerTokenPayloadStub::stub(DefineLocal),
@@ -1566,7 +1686,7 @@ mod specs {
 
         let actual = parse_impl(ParserState::new(), &mut context, &create_stub(&tokens));
         assert_ok!(actual);
-        let (actual, _) = actual.unwrap();
+        let (actual, _, _) = actual.unwrap();
         assert!(actual.statements.len() == 1);
 
         let expected: Node<SparseToken> = Node {
@@ -1623,7 +1743,7 @@ mod specs {
 
         let actual = parse_impl(ParserState::new(), &mut context, &create_stub(&tokens));
         assert_ok!(actual);
-        let (actual, _) = actual.unwrap();
+        let (actual, _, _) = actual.unwrap();
 
         let expected: ast::Scope<SparseToken> = Scope {
             statements: vec![
@@ -1668,7 +1788,7 @@ mod specs {
     }
 
     #[test]
-    fn milestone_6() {
+    fn milestone_6_main() {
         // obj := {
         //    a :+ 12
         //    b :+ a * 3
@@ -1680,12 +1800,10 @@ mod specs {
             DefineLocal,
             BraceL,
             Ident("a".to_owned()),
-            TypeDeclaration,
-            Add,
+            DefinePublic,
             Integer(12),
             Ident("b".to_owned()),
-            TypeDeclaration,
-            Add,
+            DefinePublic,
             Ident("a".to_owned()),
             Multiply,
             Integer(3),
@@ -1702,6 +1820,76 @@ mod specs {
 
         let mut context = Context::default();
 
-        let _actual = parse_impl(ParserState::new(), &mut context, &create_stub(&tokens));
+        let actual = parse_impl(ParserState::new(), &mut context, &create_stub(&tokens));
+        assert_ok!(actual);
+        let (actual, _, _) = actual.unwrap();
+
+        let expected: ast::Scope<SparseToken> = Scope {
+            statements: vec![
+                Statement::Nested(Scope {
+                    statements: vec![
+                        Statement::InScope(Node {
+                            root: LexerTokenPayloadStub::stub(DefinePublic),
+                            args: vec![
+                                Node::leaf(StringStub::stub("a")),
+                                Node::leaf(IntegerStub::stub(12)),
+                            ],
+                        }),
+                        Statement::InScope(Node {
+                            root: LexerTokenPayloadStub::stub(DefinePublic),
+                            args: vec![
+                                Node::leaf(StringStub::stub("b")),
+                                Node {
+                                    root: LexerTokenPayloadStub::stub(Multiply),
+                                    args: vec![
+                                        Node::leaf(StringStub::stub("a")),
+                                        Node::leaf(IntegerStub::stub(3)),
+                                    ],
+                                },
+                            ],
+                        }),
+                    ],
+                }),
+                Statement::InScope(Node {
+                    root: LexerTokenPayloadStub::stub(DefineLocal),
+                    args: vec![
+                        Node::leaf(StringStub::stub("obj")),
+                        Node::leaf(ast::AstTokenPayloadStub::stub(AstTokenPayload::Struct(
+                            ast::Struct {
+                                fields: hashmap! {
+                                    "b".to_owned() => declaration::Signature{return_type: Some(Type::Int32), args: vec![]},
+                                    "a".to_owned() => declaration::Signature{return_type: Some(Type::Int32), args: vec![]},
+                                },
+                                local_fields: hashmap! {}
+                            },
+                        ))),
+                    ],
+                }),
+                Statement::InScope(Node {
+                    root: StringStub::stub("stdout"),
+                    args: vec![Node {
+                        root: LexerTokenPayloadStub::stub(Add),
+                        args: vec![
+                            Node {
+                                root: LexerTokenPayloadStub::stub(Dot),
+                                args: vec![
+                                    Node::leaf(StringStub::stub("obj")),
+                                    Node::leaf(StringStub::stub("a")),
+                                ],
+                            },
+                            Node {
+                                root: LexerTokenPayloadStub::stub(Dot),
+                                args: vec![
+                                    Node::leaf(StringStub::stub("obj")),
+                                    Node::leaf(StringStub::stub("b")),
+                                ],
+                            },
+                        ],
+                    }],
+                }),
+            ],
+        };
+
+        assert_eq!(actual, expected);
     }
 }

@@ -1,5 +1,5 @@
 use crate::ast::{AstTokenPayload, DenseToken, Node, Scope, Statement};
-use crate::declaration::{Context, Signature, Type};
+use crate::declaration::{Context, Signature, Type, Visibility};
 use crate::error::{CompilerError, Location};
 use std::collections::HashMap;
 
@@ -163,6 +163,7 @@ fn unroll_node<'a>(
             }
             Ok(node.root.return_type.clone())
         }
+        AstTokenPayload::Struct(_) => todo!(),
         AstTokenPayload::Symbol(ref ident) => {
             let declaration = context.get_declaration(ident, &node.root.loc)?;
             let arg_types = node
@@ -220,7 +221,7 @@ fn unroll_node<'a>(
             }
             Ok(signature.return_type)
         }
-        AstTokenPayload::DefineLocal(ref dtype) => {
+        AstTokenPayload::Define(ref dtype, Visibility::Local) => {
             // Compile argument
             if node.args.len() != 2 {
                 // TODO: Handle Type declaration
@@ -248,6 +249,7 @@ fn unroll_node<'a>(
             );
             Ok(Type::Void)
         }
+        AstTokenPayload::Define(ref _dtype, Visibility::Public) => unimplemented!(),
         AstTokenPayload::Cast => {
             let arg_type = unroll_node(&node.args.get(0).expect("cast argument"))?;
             let target_type =
@@ -262,7 +264,7 @@ fn unroll_node<'a>(
             msg: format!("[9]: Exporter Error: Unknown token {:?}", node.root.payload),
         }),
         AstTokenPayload::Scope => unimplemented!(),
-        AstTokenPayload::DefinePublic(_) => unimplemented!(),
+        AstTokenPayload::FieldRef => todo!(),
     }
 }
 
@@ -302,7 +304,7 @@ pub fn compile(context: &Context, ast: Scope<DenseToken>) -> Result<Vec<ByteCode
 mod specs {
     use super::*;
     use crate::ast::{DenseToken, LexerTokenPayloadStub, Node, Scope};
-    use crate::declaration::Declaration;
+    use crate::declaration::{Declaration, Visibility};
     use crate::token::TokenPayload;
     use ByteCode::*;
     use TokenPayload::*;
@@ -323,8 +325,9 @@ mod specs {
 
         let context = Context {
             declarations: hashmap! {
-                "stdout".to_string() => Declaration::function(Type::Void, vec![Type::Int32], true)
+                "stdout".to_string() => Declaration::function(Type::Void, vec![Type::Int32], true, Visibility::Local)
             },
+            lower: None,
         };
         let actual = compile(&context, input);
         assert_ok!(actual);
@@ -357,8 +360,9 @@ mod specs {
         };
         let context = Context {
             declarations: hashmap! {
-                "stdout".to_string() => Declaration::function(Type::Void, vec![Type::Int32], true)
+                "stdout".to_string() => Declaration::function(Type::Void, vec![Type::Int32], true, Visibility::Local)
             },
+            lower: None,
         };
         let actual = compile(&context, input);
         assert_ok!(actual);
@@ -427,12 +431,13 @@ mod specs {
 
         let context = Context {
             declarations: hashmap! {
-                "stdout".to_string() => Declaration::function(Type::Void, vec![Type::Int32], true),
-                "max".to_string() => Declaration::function(Type::Int32, vec![Type::Int32,Type::Int32], false),
+                "stdout".to_string() => Declaration::function(Type::Void, vec![Type::Int32], true, Visibility::Local),
+                "max".to_string() => Declaration::function(Type::Int32, vec![Type::Int32,Type::Int32], false, Visibility::Local),
                 "a".to_string() => Declaration::variable(Type::Int32),
                 "b".to_string() => Declaration::variable(Type::Int32),
                 "c".to_string() => Declaration::variable(Type::Int32)
             },
+            lower: None,
         };
 
         let actual = compile(&context, input);
@@ -466,7 +471,7 @@ mod specs {
             statements: vec![
                 Node {
                     root: DenseToken {
-                        payload: AstTokenPayload::DefineLocal(Some(Type::Int32)),
+                        payload: AstTokenPayload::Define(Some(Type::Int32), Visibility::Local),
                         return_type: Type::Void,
                         loc: Location::default(),
                     },
@@ -477,7 +482,7 @@ mod specs {
                 },
                 Node {
                     root: DenseToken {
-                        payload: AstTokenPayload::DefineLocal(Some(Type::Int8)),
+                        payload: AstTokenPayload::Define(Some(Type::Int8), Visibility::Local),
                         return_type: Type::Void,
                         loc: Location::default(),
                     },
@@ -506,7 +511,7 @@ mod specs {
                 },
                 Node {
                     root: DenseToken {
-                        payload: AstTokenPayload::DefineLocal(Some(Type::Int8)),
+                        payload: AstTokenPayload::Define(Some(Type::Int8), Visibility::Local),
                         return_type: Type::Void,
                         loc: Location::default(),
                     },
@@ -546,6 +551,7 @@ mod specs {
                 "c".to_string() => Declaration::variable(Type::Int8),
                 "i8".to_string() => Declaration::variable(Type::Type),
             },
+            lower: None,
         };
 
         let actual = compile(&context, input);
@@ -637,12 +643,13 @@ mod specs {
 
         let context = Context {
             declarations: hashmap! {
-                "stdout".to_string() => Declaration::function(Type::Void, vec![Type::Int8], true),
-                "max".to_string() => Declaration::function(Type::Int8, vec![Type::Int8,Type::Int8], false),
+                "stdout".to_string() => Declaration::function(Type::Void, vec![Type::Int8], true, Visibility::Local),
+                "max".to_string() => Declaration::function(Type::Int8, vec![Type::Int8,Type::Int8], false, Visibility::Local),
                 "a".to_string() => Declaration::variable(Type::Int32),
                 "b".to_string() => Declaration::variable(Type::Int8),
                 "c".to_string() => Declaration::variable(Type::Int8)
             },
+            lower: None,
         };
 
         let actual = compile(&context, input);

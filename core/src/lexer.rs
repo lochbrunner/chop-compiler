@@ -79,8 +79,8 @@ fn operators(code: Span) -> IResult<Span, TokenPayload> {
     alt((
         map(tag("|"), |_| TokenPayload::Pipe),
         map(tag(":="), |_| TokenPayload::DefineLocal),
+        map(tag(":+"), |_| TokenPayload::DefinePublic),
         map(tag(":"), |_| TokenPayload::TypeDeclaration),
-        map(tag(":+"), |_| TokenPayload::TypeDeclaration),
         map(tag("as"), |_| TokenPayload::Cast),
     ))(code)
 }
@@ -742,12 +742,10 @@ mod specs {
             DefineLocal,
             BraceL,
             Ident("a".to_owned()),
-            TypeDeclaration,
-            Add,
+            DefinePublic,
             Integer(12),
             Ident("b".to_owned()),
-            TypeDeclaration,
-            Add,
+            DefinePublic,
             Ident("a".to_owned()),
             Multiply,
             Integer(3),

@@ -1,0 +1,9 @@
+#!/usr/bin/env ichop
+
+a := {
+    b :+ {
+        c :+ {2}
+    }
+}
+
+stdout a.b.c

@@ -21,6 +21,7 @@ pub enum Type {
     Float64,
     Void,
     Type,
+    Struct(ast::Struct),
 }
 
 impl FromStr for Type {
@@ -99,6 +100,7 @@ impl fmt::Display for Type {
             Type::Float64 => "float64",
             Type::Void => "void",
             Type::Type => "type",
+            Type::Struct(_) => "struct",
         };
         write!(f, "{}", s)
     }
@@ -123,16 +125,23 @@ type LazySignature = fn(
     partial: &Signature<Option<Type>>,
 ) -> Result<Signature<Type>, String>;
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum Visibility {
+    Local,  // :=
+    Public, // :+
+}
+
 pub struct Declaration {
     pub signature: Signature<Option<Type>>,
     pub deduce_complete: LazySignature,
     // #[deprecated(note = "This is equal with return type being Void")]
     pub is_statement: bool,
+    pub visibility: Visibility,
 }
 
 impl fmt::Debug for Declaration {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{:?}", self.signature)
+        write!(f, "{:?} {:?}", self.signature, self.visibility)
     }
 }
 
@@ -193,6 +202,7 @@ impl Declaration {
                     args: vec![tp; args_count],
                 })
             },
+            visibility: Visibility::Local,
         }
     }
     /// Ignores all types are the same
@@ -227,10 +237,16 @@ impl Declaration {
                     args: vec![tp; args_count],
                 })
             },
+            visibility: Visibility::Local,
         }
     }
     /// Use this if all types are constant.
-    pub fn function(return_type: Type, args: Vec<Type>, is_statement: bool) -> Declaration {
+    pub fn function(
+        return_type: Type,
+        args: Vec<Type>,
+        is_statement: bool,
+        visibility: Visibility,
+    ) -> Declaration {
         Declaration {
             is_statement,
             signature: Signature {
@@ -256,6 +272,7 @@ impl Declaration {
 
                 Ok(Signature { return_type, args })
             },
+            visibility,
         }
     }
     /// Use this if all types are constant.
@@ -273,6 +290,7 @@ impl Declaration {
                     args: vec![],
                 })
             },
+            visibility: Visibility::Local,
         }
     }
 
@@ -291,33 +309,88 @@ impl Declaration {
 }
 
 #[derive(Debug)]
-pub struct Context {
+pub struct Context<'a> {
     pub declarations: HashMap<String, Declaration>,
+    pub lower: Option<&'a Context<'a>>,
 }
 
-impl Context {
+impl<'a> Context<'a> {
+    pub fn gen_struct(&self) -> ast::Struct {
+        ast::Struct {
+            fields: self
+                .declarations
+                .iter()
+                .filter(|(_, d)| d.visibility == Visibility::Public)
+                .map(|(n, d)| (n.clone(), d.signature.clone()))
+                .collect(),
+            local_fields: self
+            .declarations
+            .iter()
+            .filter(|(_, d)| d.visibility == Visibility::Local)
+            .map(|(n, d)| (n.clone(), d.signature.clone()))
+            .collect(),
+        }
+    }
+    pub fn try_get_declaration(&self, ident: &str) -> Option<&Declaration> {
+        match self.declarations.get(ident) {
+            None => match self.lower {
+                Some(lower) => lower.try_get_declaration(ident),
+                None => None,
+            },
+            Some(dec) => Some(dec),
+        }
+    }
     pub fn get_declaration(
         &self,
         ident: &str,
         location: &Location,
     ) -> Result<&Declaration, CompilerError> {
-        match self.declarations.get(ident) {
-            None => Err(CompilerError {
-                location: location.clone(),
-                msg: format!("[C1] Symbol {} was not defined.", ident),
-            }),
-            Some(dec) => Ok(dec),
-        }
+        self.try_get_declaration(ident).ok_or(CompilerError {
+            location: location.clone(),
+            msg: format!("[C1] Symbol {} was not defined.", ident),
+        })
     }
 
     pub fn new() -> Self {
         Self {
             declarations: HashMap::new(),
+            lower: None,
+        }
+    }
+
+    pub fn up<'b>(&'b self) -> Self
+    where
+        'b: 'a,
+    {
+        Self {
+            declarations: HashMap::new(),
+            lower: Some(self),
+        }
+    }
+
+    pub fn from_struct(structs: &ast::Struct) -> Self {
+        Self {
+            declarations: structs
+                .fields
+                .iter()
+                .map(|(n, s)| {
+                    (
+                        n.clone(),
+                        Declaration {
+                            deduce_complete: |_, _| Err("".to_owned()),
+                            signature: s.clone(),
+                            visibility: Visibility::Public,
+                            is_statement: false,
+                        },
+                    )
+                })
+                .collect(),
+            lower: None,
         }
     }
 }
 
-impl Default for Context {
+impl<'a> Default for Context<'a> {
     /// Milestone 5 context
     fn default() -> Self {
         Self {
@@ -337,6 +410,7 @@ impl Default for Context {
                 "f32".to_string() => Declaration::variable(Type::Type),
                 "f64".to_string() => Declaration::variable(Type::Type),
             },
+            lower: None,
         }
     }
 }
