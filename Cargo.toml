@@ -1,7 +1,9 @@
 [workspace]
 
 members = [
-    "ichop",
+    "ichop/eval",
+    "ichop/app",
     "cchop",
-    "core"
+    "core",
+    "page",
 ]

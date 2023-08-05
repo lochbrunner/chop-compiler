@@ -53,6 +53,7 @@ fn specialize_declaration(
     args: Vec<SparseNode>,
     loc: Location,
     context: &mut Context,
+    visibility: &Visibility,
 ) -> Result<DenseNode, CompilerError> {
     let (name, value, dtype) = match args.len() {
         2 => {
@@ -84,7 +85,7 @@ fn specialize_declaration(
         let args = vec![name, value];
         Ok(DenseNode {
             root: DenseToken {
-                payload: AstTokenPayload::Define(Some(dtype), Visibility::Local),
+                payload: AstTokenPayload::Define(Some(dtype), visibility.clone()),
                 loc,
                 return_type: Type::Void,
             },
@@ -233,7 +234,7 @@ fn specialize_node<'a>(
         args,
     } = node;
     match &payload {
-        AstTokenPayload::Define(_, _) => specialize_declaration(args, loc, context),
+        AstTokenPayload::Define(_, visibility) => specialize_declaration(args, loc, context, visibility),
         AstTokenPayload::Cast => specialize_cast(args, loc, context),
         AstTokenPayload::Add
         | AstTokenPayload::Subtract

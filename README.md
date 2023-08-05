@@ -2,10 +2,13 @@
 [![GitHub Actions status](https://github.com/lochbrunner/chop-compiler/workflows/unit-test/badge.svg)](https://github.com/lochbrunner/chop-compiler/actions?workflow=unit-test)
 [![GitHub Actions status](https://github.com/lochbrunner/chop-compiler/workflows/milestones-ichop/badge.svg)](https://github.com/lochbrunner/chop-compiler/actions?workflow=milestones-ichop)
 [![GitHub Actions status](https://github.com/lochbrunner/chop-compiler/workflows/milestones-cchop/badge.svg)](https://github.com/lochbrunner/chop-compiler/actions?workflow=milestones-cchop)
+[![GitHub Actions status](https://github.com/lochbrunner/chop-compiler/workflows/trunk-gh-page/badge.svg)](https://github.com/lochbrunner/chop-compiler/actions?workflow=trunk-gh-page)
 
 # Reference implementation for chop-lang
 
 This is a reference implementation of [Chop Language](https://github.com/lochbrunner/chop-specs/blob/master/README.md).
+
+See [interactive demo](https://lochbrunner.github.io/chop-compiler/).
 
 ## Prerequisites
 

@@ -9,5 +9,6 @@ edition = "2018"
 [dependencies]
 clap = "2.33.0"
 maplit = "^1.0.1"
-core = {path = "../core"}
+eval = {path = "../eval"}
+core = {path = "../../core"}
 paste = "1.0"

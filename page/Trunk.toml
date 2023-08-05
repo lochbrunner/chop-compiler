@@ -1,0 +1,4 @@
+[build]
+
+# The public URL from which assets are to be served.
+public_url = "./"

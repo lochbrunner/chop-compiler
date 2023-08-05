@@ -1,7 +1,6 @@
-mod evaluation;
-
 extern crate clap;
 extern crate core;
+extern crate eval;
 
 extern crate maplit;
 
@@ -20,7 +19,7 @@ fn run(filename: &str) -> Result<(), ()> {
                 Err(())
             }
             Ok(bytecode) => {
-                if let Err(msg) = evaluation::evaluate(&bytecode, &mut io::stdout()) {
+                if let Err(msg) = eval::evaluate(&bytecode, &mut io::stdout()) {
                     eprintln!("Runtime Error: {}", msg);
                     Err(())
                 } else {

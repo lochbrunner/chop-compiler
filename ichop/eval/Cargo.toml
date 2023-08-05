@@ -1,0 +1,13 @@
+[package]
+name = "eval"
+version = "0.1.0"
+authors = ["Matthias Lochbrunner <matthias_lochbrunner@web.de>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+clap = "2.33.0"
+maplit = "^1.0.1"
+core = {path = "../../core"}
+paste = "1.0"
